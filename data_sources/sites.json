@@ -1,0 +1,13 @@
+[
+  {"id": "site-statue-liberty", "name": "Statue of Liberty", "country_code": "USA", "lat": 40.6892, "lon": -74.0445},
+  {"id": "site-niagara", "name": "Niagara Falls", "country_code": "CAN", "lat": 43.0962, "lon": -79.0377},
+  {"id": "site-chichen-itza", "name": "Chichen Itza", "country_code": "MEX", "lat": 20.6843, "lon": -88.5678},
+  {"id": "site-christ", "name": "Christ the Redeemer", "country_code": "BRA", "lat": -22.9519, "lon": -43.2105},
+  {"id": "site-stonehenge", "name": "Stonehenge", "country_code": "GBR", "lat": 51.1789, "lon": -1.8262},
+  {"id": "site-mont-saint-michel", "name": "Mont-Saint-Michel", "country_code": "FRA", "lat": 48.6361, "lon": -1.5115},
+  {"id": "site-taj-mahal", "name": "Taj Mahal", "country_code": "IND", "lat": 27.1751, "lon": 78.0421},
+  {"id": "site-great-wall", "name": "Great Wall at Badaling", "country_code": "CHN", "lat": 40.3652, "lon": 116.0204},
+  {"id": "site-fuji", "name": "Mount Fuji", "country_code": "JPN", "lat": 35.3606, "lon": 138.7274},
+  {"id": "site-sydney-opera", "name": "Sydney Opera House", "country_code": "AUS", "lat": -33.8568, "lon": 151.2153},
+  {"id": "site-table-mountain", "name": "Table Mountain", "country_code": "ZAF", "lat": -33.9628, "lon": 18.4098}
+]
