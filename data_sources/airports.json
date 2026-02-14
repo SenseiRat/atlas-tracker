@@ -1,0 +1,14 @@
+[
+  {"id": "airport-jfk", "name": "John F. Kennedy International", "country_code": "USA", "lat": 40.6413, "lon": -73.7781},
+  {"id": "airport-lax", "name": "Los Angeles International", "country_code": "USA", "lat": 33.9416, "lon": -118.4085},
+  {"id": "airport-yyz", "name": "Toronto Pearson International", "country_code": "CAN", "lat": 43.6777, "lon": -79.6248},
+  {"id": "airport-mex", "name": "Mexico City International", "country_code": "MEX", "lat": 19.4361, "lon": -99.0719},
+  {"id": "airport-gig", "name": "Rio de Janeiro/Galeao", "country_code": "BRA", "lat": -22.8090, "lon": -43.2506},
+  {"id": "airport-lhr", "name": "London Heathrow", "country_code": "GBR", "lat": 51.4700, "lon": -0.4543},
+  {"id": "airport-cdg", "name": "Paris Charles de Gaulle", "country_code": "FRA", "lat": 49.0097, "lon": 2.5479},
+  {"id": "airport-del", "name": "Indira Gandhi International", "country_code": "IND", "lat": 28.5562, "lon": 77.1000},
+  {"id": "airport-pvg", "name": "Shanghai Pudong International", "country_code": "CHN", "lat": 31.1443, "lon": 121.8083},
+  {"id": "airport-hnd", "name": "Tokyo Haneda", "country_code": "JPN", "lat": 35.5494, "lon": 139.7798},
+  {"id": "airport-syd", "name": "Sydney Kingsford Smith", "country_code": "AUS", "lat": -33.9399, "lon": 151.1753},
+  {"id": "airport-cpt", "name": "Cape Town International", "country_code": "ZAF", "lat": -33.9700, "lon": 18.5972}
+]
