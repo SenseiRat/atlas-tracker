@@ -1,0 +1,14 @@
+[
+  {"id": "city-nyc", "name": "New York City", "country_code": "USA", "lat": 40.7128, "lon": -74.0060},
+  {"id": "city-la", "name": "Los Angeles", "country_code": "USA", "lat": 34.0522, "lon": -118.2437},
+  {"id": "city-toronto", "name": "Toronto", "country_code": "CAN", "lat": 43.6511, "lon": -79.3470},
+  {"id": "city-mexico-city", "name": "Mexico City", "country_code": "MEX", "lat": 19.4326, "lon": -99.1332},
+  {"id": "city-rio", "name": "Rio de Janeiro", "country_code": "BRA", "lat": -22.9068, "lon": -43.1729},
+  {"id": "city-london", "name": "London", "country_code": "GBR", "lat": 51.5074, "lon": -0.1278},
+  {"id": "city-paris", "name": "Paris", "country_code": "FRA", "lat": 48.8566, "lon": 2.3522},
+  {"id": "city-delhi", "name": "New Delhi", "country_code": "IND", "lat": 28.6139, "lon": 77.2090},
+  {"id": "city-shanghai", "name": "Shanghai", "country_code": "CHN", "lat": 31.2304, "lon": 121.4737},
+  {"id": "city-tokyo", "name": "Tokyo", "country_code": "JPN", "lat": 35.6895, "lon": 139.6917},
+  {"id": "city-sydney", "name": "Sydney", "country_code": "AUS", "lat": -33.8688, "lon": 151.2093},
+  {"id": "city-cape-town", "name": "Cape Town", "country_code": "ZAF", "lat": -33.9249, "lon": 18.4241}
+]
