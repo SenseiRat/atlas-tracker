@@ -2,7 +2,7 @@ services:
   world-tracker:
     build: .
     ports:
-      - "8080:8000"
+      - "8000:8000"
     volumes:
       - world-tracker-data:/data
 

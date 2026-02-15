@@ -8,9 +8,7 @@ A single-container, self-hosted tracker for countries, cities, airports, and her
 docker compose up --build
 ```
 
-The container listens on port `8000` internally and is published as `8080` on the host.
-
-Open http://localhost:8080
+Open http://localhost:8000
 
 ### Data persistence
 
@@ -31,21 +29,6 @@ cd server
 pip install -r requirements.txt
 DATA_DIR=../data DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
 ```
-
-## Troubleshooting dependency install (npm/pip)
-
-If `npm install` or `pip install` fails with `403`/proxy errors, your environment is blocking outbound registry access.
-
-- This repo includes a root `.npmrc` pinned to `https://registry.npmjs.org/`.
-- Unset forced proxy variables before retrying:
-
-```bash
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
-cd frontend && npm install
-pip install -r server/requirements.txt
-```
-
-- If you are on a corporate network, set those variables to your approved proxy instead.
 
 ## Data sources
 
