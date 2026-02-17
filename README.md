@@ -32,12 +32,12 @@ DATA_DIR=../data DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
 
 ## Data sources
 
-The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately.
+The repo ships with the following datasets:
 
-- `countries.geojson`: simplified placeholder polygons.
-- `cities.json`: curated major cities.
-- `airports.json`: curated major airports.
-- `sites.json`: curated UNESCO-style landmarks.
+- `countries.geojson`: Natural Earth world map
+- `cities.json`: Global cities with greater than 15,000 population
+- `airports.json`: OurAirports list of airports
+- `sites.json`: Placeholder for UNESCO world heritage sites
 
 ### Replacing with full datasets
 
@@ -65,3 +65,13 @@ The database seeds automatically on first start. You can manually reseed with:
 ```bash
 python scripts/seed_db.py
 ```
+
+# Planned Features
+- Flight log tracking
+- Michelin Star Restaurants (and potentially similar review bodies for regions that Michellin doesn't cover)
+- National / Iconic foods (if I can find a dataset on it) or regional food collections
+- Nature achievements (highest mountain, etc.)
+- Famous cultural festivals
+- Protected Areas, National Parks, Reserves (WDPA database)
+- Dark Sky destinations (International Dark Sky Places List)
+- OpenStreetMap tags as appropriate
