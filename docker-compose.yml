@@ -4,7 +4,5 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - world-tracker-data:/data
+      - ./world-tracker-data:/data
 
-volumes:
-  world-tracker-data:
