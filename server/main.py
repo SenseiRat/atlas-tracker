@@ -17,6 +17,7 @@ DATA_SOURCES_DIR = Path(os.environ.get("DATA_SOURCES_DIR", "data_sources"))
 FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", "frontend/dist"))
 
 app = FastAPI(title="World Visited Tracker")
+VALID_PLACE_TYPES = {"country", "city", "airport", "site"}
 
 
 SCHEMA_SQL = """
@@ -49,9 +50,6 @@ CREATE TABLE IF NOT EXISTS visits (
 """
 
 
-DEFAULT_PROFILES = ["Default", "Family", "Friends"]
-
-
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -71,14 +69,8 @@ def load_json(path: Path) -> Any:
 
 
 def seed_profiles(conn: sqlite3.Connection) -> None:
-    existing = conn.execute("SELECT COUNT(*) as count FROM profiles").fetchone()["count"]
-    if existing:
-        return
-    now = datetime.utcnow().isoformat()
-    conn.executemany(
-        "INSERT INTO profiles (name, created_at) VALUES (?, ?)",
-        [(name, now) for name in DEFAULT_PROFILES],
-    )
+    # Intentionally empty: first profile is now created via web UI on first run.
+    _ = conn
 
 
 def seed_places(conn: sqlite3.Connection) -> None:
@@ -95,7 +87,7 @@ def seed_places(conn: sqlite3.Connection) -> None:
 
     for feature in countries.get("features", []):
         props = feature.get("properties", {})
-        place_id = f"country-{props.get('ADM0_A3') or props.get('ISO_A3') or props.get('NAME') }"
+        place_id = f"country-{props.get('ADM0_A3') or props.get('ISO_A3') or props.get('NAME')}"
         data = {"geometry": feature.get("geometry"), "properties": props}
         rows.append(
             (
@@ -161,6 +153,16 @@ def seed_db() -> None:
         seed_places(conn)
 
 
+def count_by_type(conn: sqlite3.Connection, place_type: str, visited_ids: List[str]) -> int:
+    if not visited_ids:
+        return 0
+    placeholders = ",".join("?" for _ in visited_ids)
+    return conn.execute(
+        f"SELECT COUNT(*) as count FROM places WHERE type = ? AND id IN ({placeholders})",
+        [place_type, *visited_ids],
+    ).fetchone()["count"]
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     seed_db()
@@ -191,6 +193,32 @@ async def create_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"id": profile_id, "name": name}
 
 
+@app.put("/api/profiles/{profile_id}")
+async def update_profile(profile_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    with get_db() as conn:
+        profile = conn.execute("SELECT id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        try:
+            conn.execute("UPDATE profiles SET name = ? WHERE id = ?", (name, profile_id))
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=400, detail="Profile already exists") from exc
+    return {"id": profile_id, "name": name}
+
+
+@app.delete("/api/profiles/{profile_id}")
+async def delete_profile(profile_id: int) -> Dict[str, Any]:
+    with get_db() as conn:
+        profile = conn.execute("SELECT id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+    return {"status": "ok"}
+
+
 @app.get("/api/places")
 async def get_places(
     type: str = Query(...),
@@ -198,6 +226,8 @@ async def get_places(
     limit: int = 1000,
     offset: int = 0,
 ) -> Dict[str, Any]:
+    if type not in VALID_PLACE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid place type")
     params: List[Any] = [type]
     where = "WHERE type = ?"
     if query:
@@ -222,6 +252,8 @@ async def get_places(
 
 @app.get("/api/places/geojson")
 async def get_places_geojson(type: str) -> Dict[str, Any]:
+    if type not in VALID_PLACE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid place type")
     with get_db() as conn:
         rows = conn.execute(
             "SELECT id, name, country_code, lat, lon, data FROM places WHERE type = ?",
@@ -252,12 +284,17 @@ async def get_places_geojson(type: str) -> Dict[str, Any]:
 
 
 @app.get("/api/visits")
-async def get_visits(profile_id: int) -> List[Dict[str, Any]]:
+async def get_visits(profile_id: Optional[int] = None) -> List[Dict[str, Any]]:
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT place_id, visited_at, trip_id FROM visits WHERE profile_id = ?",
-            (profile_id,),
-        ).fetchall()
+        if profile_id is None:
+            rows = conn.execute(
+                "SELECT profile_id, place_id, visited_at, trip_id FROM visits",
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT profile_id, place_id, visited_at, trip_id FROM visits WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -273,27 +310,30 @@ async def toggle_visit(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="profile_id, place_id, visited required")
 
     with get_db() as conn:
-        if visited:
-            conn.execute(
-                "INSERT OR REPLACE INTO visits (profile_id, place_id, visited_at, trip_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                (
-                    profile_id,
-                    place_id,
-                    visited_at,
-                    trip_id,
-                    datetime.utcnow().isoformat(),
-                ),
-            )
-        else:
-            conn.execute(
-                "DELETE FROM visits WHERE profile_id = ? AND place_id = ?",
-                (profile_id, place_id),
-            )
+        try:
+            if visited:
+                conn.execute(
+                    "INSERT OR REPLACE INTO visits (profile_id, place_id, visited_at, trip_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        profile_id,
+                        place_id,
+                        visited_at,
+                        trip_id,
+                        datetime.utcnow().isoformat(),
+                    ),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM visits WHERE profile_id = ? AND place_id = ?",
+                    (profile_id, place_id),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=400, detail="Invalid profile_id or place_id") from exc
     return {"profile_id": profile_id, "place_id": place_id, "visited": visited}
 
 
 @app.get("/api/stats")
-async def get_stats(profile_id: int) -> Dict[str, Any]:
+async def get_stats(profile_id: Optional[int] = None) -> Dict[str, Any]:
     with get_db() as conn:
         total_countries = conn.execute(
             "SELECT COUNT(*) as count FROM places WHERE type = 'country'",
@@ -307,37 +347,21 @@ async def get_stats(profile_id: int) -> Dict[str, Any]:
         total_sites = conn.execute(
             "SELECT COUNT(*) as count FROM places WHERE type = 'site'",
         ).fetchone()["count"]
-        visited = conn.execute(
-            "SELECT place_id FROM visits WHERE profile_id = ?",
-            (profile_id,),
-        ).fetchall()
-    visited_ids = {row["place_id"] for row in visited}
 
-    with get_db() as conn:
-        visited_countries = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'country' AND id IN ({})".format(
-                ",".join("?" for _ in visited_ids) if visited_ids else "''"
-            ),
-            list(visited_ids),
-        ).fetchone()["count"] if visited_ids else 0
-        visited_cities = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'city' AND id IN ({})".format(
-                ",".join("?" for _ in visited_ids) if visited_ids else "''"
-            ),
-            list(visited_ids),
-        ).fetchone()["count"] if visited_ids else 0
-        visited_airports = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'airport' AND id IN ({})".format(
-                ",".join("?" for _ in visited_ids) if visited_ids else "''"
-            ),
-            list(visited_ids),
-        ).fetchone()["count"] if visited_ids else 0
-        visited_sites = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'site' AND id IN ({})".format(
-                ",".join("?" for _ in visited_ids) if visited_ids else "''"
-            ),
-            list(visited_ids),
-        ).fetchone()["count"] if visited_ids else 0
+        if profile_id is None:
+            visited_rows = conn.execute("SELECT DISTINCT place_id FROM visits").fetchall()
+        else:
+            visited_rows = conn.execute(
+                "SELECT place_id FROM visits WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchall()
+
+        visited_ids = [row["place_id"] for row in visited_rows]
+
+        visited_countries = count_by_type(conn, "country", visited_ids)
+        visited_cities = count_by_type(conn, "city", visited_ids)
+        visited_airports = count_by_type(conn, "airport", visited_ids)
+        visited_sites = count_by_type(conn, "site", visited_ids)
 
     world_percent = (visited_countries / total_countries * 100) if total_countries else 0
 
@@ -380,18 +404,21 @@ async def import_data(profile_id: int, file: UploadFile = File(...)) -> Dict[str
         raise HTTPException(status_code=400, detail="Invalid visits data")
 
     with get_db() as conn:
-        conn.execute("DELETE FROM visits WHERE profile_id = ?", (profile_id,))
-        for visit in visits:
-            conn.execute(
-                "INSERT OR REPLACE INTO visits (profile_id, place_id, visited_at, trip_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                (
-                    profile_id,
-                    visit.get("place_id"),
-                    visit.get("visited_at"),
-                    visit.get("trip_id"),
-                    datetime.utcnow().isoformat(),
-                ),
-            )
+        try:
+            conn.execute("DELETE FROM visits WHERE profile_id = ?", (profile_id,))
+            for visit in visits:
+                conn.execute(
+                    "INSERT OR REPLACE INTO visits (profile_id, place_id, visited_at, trip_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        profile_id,
+                        visit.get("place_id"),
+                        visit.get("visited_at"),
+                        visit.get("trip_id"),
+                        datetime.utcnow().isoformat(),
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=400, detail="Import contains invalid place IDs") from exc
     return {"status": "ok", "imported": len(visits)}
 
 
