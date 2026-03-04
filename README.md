@@ -58,6 +58,7 @@ The repo ships with a **small curated starter dataset** in `data_sources/` so th
 
 ### Replacing with full datasets
 
+<<<<<<< HEAD
 Use the commands below from the repo root:
 
 1) **Countries (Natural Earth)**
@@ -113,6 +114,19 @@ docker compose up --build
 - First run prompts for the first profile name from the web UI (no seeded defaults).
 - Supports Add / Edit / Delete profile actions.
 - Includes an **All Profiles** mode with per-profile map colors and legend.
+=======
+1. Download Natural Earth `ne_110m_admin_0_countries.geojson`.
+2. Replace `data_sources/countries.geojson`.
+3. Replace cities/airports with your own filtered datasets.
+4. Restart the app/container. Place records are upserted at startup, so source file changes are applied automatically.
+
+If you remove places from a dataset and want those removed from the database too, reset data once with:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+>>>>>>> 58854bf (Updating tag structure)
 
 ## API overview
 

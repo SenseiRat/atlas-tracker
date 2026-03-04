@@ -74,10 +74,6 @@ def seed_profiles(conn: sqlite3.Connection) -> None:
 
 
 def seed_places(conn: sqlite3.Connection) -> None:
-    existing = conn.execute("SELECT COUNT(*) as count FROM places").fetchone()["count"]
-    if existing:
-        return
-
     countries = load_json(DATA_SOURCES_DIR / "countries.geojson")
     cities = load_json(DATA_SOURCES_DIR / "cities.json")
     airports = load_json(DATA_SOURCES_DIR / "airports.json")
@@ -141,7 +137,17 @@ def seed_places(conn: sqlite3.Connection) -> None:
         )
 
     conn.executemany(
-        "INSERT INTO places (id, type, name, country_code, lat, lon, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        """
+        INSERT INTO places (id, type, name, country_code, lat, lon, data)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            type = excluded.type,
+            name = excluded.name,
+            country_code = excluded.country_code,
+            lat = excluded.lat,
+            lon = excluded.lon,
+            data = excluded.data
+        """,
         rows,
     )
 
