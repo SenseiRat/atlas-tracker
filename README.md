@@ -8,13 +8,54 @@ A single-container, self-hosted tracker for countries, cities, airports, and her
 docker compose up --build
 ```
 
-The container listens on port `8000` internally and is published as `8080` on the host.
+The container listens on port `8000` internally and is published as `8000` on the host.
 
-Open http://localhost:8080
+Open http://localhost:8000
 
 ### Data persistence
 
 SQLite is stored in a Docker volume at `/data/app.db`.
+
+### Optional Postgres backend
+
+SQLite is still the default. To use Postgres instead, set `DB_HOST`, `DB_PORT`, and `DB_NAME`:
+
+```bash
+DB_HOST=localhost DB_PORT=5432 DB_NAME=places_been docker compose up --build
+```
+
+When `DB_HOST` and `DB_NAME` are set, the API uses Postgres automatically (`DB_BACKEND=auto`).
+
+## Runtime environment variables
+
+You can configure the container with these environment variables:
+
+- `DB_BACKEND`: `auto` (default), `sqlite`, or `postgres`
+- `DB_HOST`: Postgres host (required when `DB_BACKEND=postgres`)
+- `DB_PORT`: Postgres port (default `5432`)
+- `DB_NAME`: Postgres database name (required when `DB_BACKEND=postgres`)
+- `DB_USER`: Postgres user (default `postgres`)
+- `DB_PASSWORD`: Postgres password (optional)
+- `DB_SSLMODE`: Postgres sslmode (default `prefer`)
+- `DATA_DIR`: SQLite data directory (default `/data`)
+- `SQLITE_DB_PATH`: absolute SQLite file path override (optional)
+- `SQLITE_BUSY_TIMEOUT_MS`: SQLite lock wait timeout in milliseconds (default `5000`)
+- `SQLITE_ENABLE_WAL`: SQLite WAL mode (`1`/`0`, default `1`)
+- `IMPORT_MAX_BYTES`: max JSON import size in bytes (default `10485760`)
+- `OIDC_ISSUER`: OIDC issuer URL (enables authentication when set with `OIDC_CLIENT_ID`)
+- `OIDC_CLIENT_ID`: OIDC client ID
+- `OIDC_CLIENT_SECRET`: OIDC client secret (optional for public clients)
+- `OIDC_SCOPES`: authorization scopes (default `openid profile email`)
+- `OIDC_REDIRECT_PATH`: callback path or full callback URL (default `/api/auth/callback`)
+- `OIDC_SESSION_SECRET`: required HMAC secret for signed auth cookies when OIDC is enabled
+- `OIDC_SESSION_COOKIE`: signed session cookie name (default `world_tracker_session`)
+- `OIDC_LOGIN_COOKIE`: temporary login state cookie name (default `world_tracker_login`)
+- `OIDC_SESSION_TTL_SECONDS`: session lifetime (default `604800`)
+- `OIDC_LOGIN_TTL_SECONDS`: login state lifetime (default `600`)
+- `OIDC_COOKIE_SECURE`: mark auth cookies `Secure` (`1`/`0`, default `0`)
+- `PUID`: container runtime UID (default `1000`)
+- `PGID`: container runtime GID (default `1000`)
+- `UVICORN_WORKERS`: worker count (default `1`)
 
 ## Local development
 
@@ -30,6 +71,14 @@ In another terminal:
 cd server
 pip install -r requirements.txt
 DATA_DIR=../data DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
+```
+
+Use Postgres locally by setting `DB_HOST`, `DB_PORT`, and `DB_NAME` (and optionally omitting `DATA_DIR`):
+
+```bash
+cd server
+pip install -r requirements.txt
+DB_HOST=localhost DB_PORT=5432 DB_NAME=places_been DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
 ```
 
 ## Troubleshooting dependency install (npm/pip)
@@ -49,7 +98,7 @@ pip install -r server/requirements.txt
 
 ## Data sources
 
-The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately.
+The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately. On first run, the server imports these files into the database. After that, it polls `data_sources/` on a configurable interval and applies differential upserts/deletes automatically.
 
 - `countries.geojson`: simplified placeholder polygons.
 - `cities.json`: curated major cities.
@@ -58,7 +107,6 @@ The repo ships with a **small curated starter dataset** in `data_sources/` so th
 
 ### Replacing with full datasets
 
-<<<<<<< HEAD
 Use the commands below from the repo root:
 
 1) **Countries (Natural Earth)**
@@ -97,15 +145,13 @@ data_sources/airports.json
 
 - Keep `data_sources/sites.json` as curated starter data, or replace with your own list.
 
-5) **Reseed DB after replacing files**
+5) **Replace files and let the app sync them**
 
 ```bash
-docker compose down
-# remove app data volume so SQLite reseeds from new sources
-docker volume rm places-been_world-tracker-data
-# start again
 docker compose up --build
 ```
+
+The default poll interval is hourly (`DATA_SYNC_INTERVAL_SECONDS=3600`). Set it to `0` to disable in-app polling.
 
 > The map is dynamic (MapLibre + tile layers + GeoJSON overlays), not a static image. If your environment blocks outbound tile servers, the basemap can look empty; the overlay layers still render and remain interactive.
 
@@ -114,19 +160,20 @@ docker compose up --build
 - First run prompts for the first profile name from the web UI (no seeded defaults).
 - Supports Add / Edit / Delete profile actions.
 - Includes an **All Profiles** mode with per-profile map colors and legend.
-=======
-1. Download Natural Earth `ne_110m_admin_0_countries.geojson`.
-2. Replace `data_sources/countries.geojson`.
-3. Replace cities/airports with your own filtered datasets.
-4. Restart the app/container. Place records are upserted at startup, so source file changes are applied automatically.
+- When OIDC is enabled, profiles are owned by the authenticated user and are not visible to other users.
 
-If you remove places from a dataset and want those removed from the database too, reset data once with:
+## Users
 
-```bash
-docker compose down -v
-docker compose up --build
-```
->>>>>>> 58854bf (Updating tag structure)
+- The app now enforces users in all modes.
+- OIDC mode: sign in via your provider.
+- Local mode: first run prompts to create the first user, then requires selecting a user before using the app.
+
+## OIDC authentication
+
+- Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_SESSION_SECRET` to enable authentication.
+- The app uses the OIDC authorization code flow and stores a signed session cookie server-side.
+- Callback endpoint defaults to `http://<host>:8000/api/auth/callback`; override with `OIDC_REDIRECT_PATH` if needed.
+- Existing unowned profiles are automatically assigned to the first user who logs in after enabling OIDC.
 
 ## API overview
 
@@ -136,6 +183,10 @@ docker compose up --build
 - `POST /api/profiles`
 - `PUT /api/profiles/{profile_id}`
 - `DELETE /api/profiles/{profile_id}`
+- `GET /api/auth/session`
+- `GET /api/auth/login`
+- `GET /api/auth/callback`
+- `POST /api/auth/logout`
 - `GET /api/visits` (all profiles) or `GET /api/visits?profile_id=`
 - `POST /api/visits/toggle`
 - `GET /api/stats` (all profiles aggregate) or `GET /api/stats?profile_id=`
@@ -144,18 +195,57 @@ docker compose up --build
 
 ## Seeding
 
-The database seeds automatically on first start. You can manually reseed with:
+The database imports from `data_sources/` automatically on first start and then keeps syncing those files. You can still force a one-off sync with:
 
 ```bash
 python scripts/seed_db.py
 ```
 
+## Data Refresh Automation
+
+- In-app polling:
+  - Watches the repo-backed files in `data_sources/`.
+  - Upserts changed/new places and removes retired places only when they are not referenced by visits or trip logs.
+  - Controlled by:
+    - `DATA_SYNC_INTERVAL_SECONDS` (default `3600`)
+    - `DATA_SYNC_EXTERNAL_REFRESH_ENABLED` (default `0`)
+    - `DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS` (default `86400`)
+- `python3 scripts/update_state_regions.py`
+  - Pulls GeoNames Admin1 region names and generates `data_sources/state_regions.json`.
+  - Used by server seeding to name/populate states/regions for countries.
+- `python3 scripts/refresh_external_sources.py`
+  - Refreshes:
+    - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).
+    - `data_sources/cities.json` from GeoNames `cities15000` (population >= 10k).
+    - `data_sources/sites.json` by combining:
+      - UNESCO sites (Wikidata),
+      - protected areas/national parks (Wikidata),
+      - Michelin-starred restaurants (Wikidata),
+      - brewery/winery/distillery/vineyard places (OpenStreetMap Overpass + wikidata-tagged POIs),
+      - curated wonders + Worlds 50 Best items.
+
+After refresh, the running app will detect the changed files on the next poll and sync them automatically. For an immediate sync:
+
+```bash
+python3 scripts/seed_db.py
+```
+
+If you want the server to run the refresh scripts itself, enable `DATA_SYNC_EXTERNAL_REFRESH_ENABLED=1`. It will run those scripts on the configured external refresh interval before syncing the local files back into the database.
+
 # Planned Features
-- Flight log tracking
-- Michelin Star Restaurants (and potentially similar review bodies for regions that Michellin doesn't cover)
-- National / Iconic foods (if I can find a dataset on it) or regional food collections
-- Nature achievements (highest mountain, etc.)
-- Famous cultural festivals
-- Protected Areas, National Parks, Reserves (WDPA database)
-- Dark Sky destinations (International Dark Sky Places List)
-- OpenStreetMap tags as appropriate
+- TODO: Implement profile visibility settings (private/shared).
+- TODO: Build a Settings page for categories, OIDC config, list scope settings, and account/profile management.
+- TODO: Change list scope controls to: All / Visited / Unvisited, plus multiselect for user-defined super-lists.
+- TODO: Remove the "Visited only" checkbox after scope controls are replaced.
+- TODO: Tighten city inclusion criteria (current list is too broad) and add a lookup + manual add flow for cities not in the curated list.
+- TODO: Fully populate and build state/region outlines and lists (improve sub-country region mapping).
+- TODO: Add Dark Sky destinations (International Dark Sky Places list).
+- TODO: Add famous cultural festivals.
+- TODO: Add national/iconic foods or regional food collections.
+- TODO: Split stats from achievements and build an achievements page for gamification.
+- TODO: Expand nature achievements (highest mountain, etc.).
+- TODO: Expand Michelin-star coverage to include comparable regional review/ranking sources where Michelin is limited.
+- TODO: Migrate/expand protected areas, national parks, and reserves data to WDPA-backed coverage.
+- TODO: Fix light/dark color schemes.
+- TODO: Improve theme colors based on the selected profile color.
+- TODO: Add a map toggle to show labels in English or native language.

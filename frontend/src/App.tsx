@@ -1,16 +1,23 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import maplibregl, { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-type PlaceType = 'country' | 'city' | 'airport' | 'site';
+type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
 type ActiveProfile = number | 'all' | null;
+type CountryScope = 'all' | 'countries' | `country:${string}`;
+type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
 
 type Place = {
   id: string;
   name: string;
   country_code?: string;
+  state_code?: string;
   lat?: number;
   lon?: number;
+  airport_code?: string;
+  location?: string;
+  search_location?: string;
+  category?: string;
 };
 
 type Visit = {
@@ -20,16 +27,126 @@ type Visit = {
   trip_id?: string | null;
 };
 
+type TripLog = {
+  id: number;
+  profile_id: number;
+  flown_on?: string | null;
+  origin_place_id: string;
+  destination_place_id: string;
+  layover_place_ids: string[];
+  estimated_miles: number;
+  created_at: string;
+  route_points: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lon: number;
+    country_code?: string;
+  }>;
+  segments: Array<{
+    from_place_id: string;
+    to_place_id: string;
+    from_name: string;
+    to_name: string;
+    miles: number;
+  }>;
+};
+
 type Stats = {
+  continents: { visited: number; total: number };
   countries: { visited: number; total: number; percent: number };
+  states: { visited: number; total: number };
   cities: { visited: number; total: number };
   airports: { visited: number; total: number };
   sites: { visited: number; total: number };
+  trip_logs: {
+    count: number;
+    flight_legs: number;
+    estimated_miles: number;
+    average_miles_per_trip: number;
+  };
+  hemispheres: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+    quadrants: { ne: number; nw: number; se: number; sw: number };
+    overlap: { north_south: boolean; east_west: boolean; all_four_quadrants: boolean };
+  };
+  geo_extremes: {
+    farthest_north?: { name: string; lat: number } | null;
+    farthest_south?: { name: string; lat: number } | null;
+    easternmost?: { name: string; lon: number } | null;
+    westernmost?: { name: string; lon: number } | null;
+    highest_elevation?: { name: string; elevation_m: number } | null;
+  };
+  travel: {
+    distance_miles: number;
+    distance_km: number;
+    timezones_visited: number;
+    currencies_used: number;
+    longest_trip_streak_days: number;
+    repeated_airports: number;
+  };
+  site_categories: Record<string, { visited: number; total: number }>;
 };
 
-type Profile = { id: number; name: string };
+type Profile = {
+  id: number;
+  name: string;
+  color: string;
+  is_public: boolean;
+  is_owned: boolean;
+  owner_user_id?: number | null;
+};
+type AuthSession = {
+  oidc_enabled: boolean;
+  authenticated: boolean;
+  auth_mode?: 'oidc' | 'local';
+  local_users_count?: number;
+  has_local_users?: boolean;
+  app_settings?: AppSettings;
+  user?: {
+    id: number;
+    username?: string | null;
+    email?: string | null;
+    display_name?: string | null;
+    role?: 'admin' | 'user';
+    is_admin?: boolean;
+  } | null;
+};
 
-type CountryFeatureCollection = {
+type AppSettings = {
+  preferred_db_backend: 'sqlite' | 'postgres' | string;
+  configured_db_backend: 'sqlite' | 'postgres' | string;
+  auth_mode: 'local' | 'oidc' | string;
+  oidc_enabled: boolean;
+  oidc_issuer?: string;
+  oidc_client_id?: string;
+  oidc_client_secret?: string;
+  db_host?: string;
+  db_port?: string;
+  db_name?: string;
+  db_user?: string;
+  db_password?: string;
+  sqlite_db_path?: string;
+  restart_required?: boolean;
+};
+
+type AdminUser = {
+  id: number;
+  username?: string | null;
+  email?: string | null;
+  display_name?: string | null;
+  role: 'admin' | 'user';
+  is_admin: boolean;
+};
+
+type AdminProfile = Profile & {
+  owner_label?: string;
+};
+
+type MapFeatureCollection = {
   type: 'FeatureCollection';
   features: Array<{
     id: string;
@@ -40,12 +157,41 @@ type CountryFeatureCollection = {
 
 const tabs: { type: PlaceType; label: string; helper: string }[] = [
   { type: 'country', label: 'Countries', helper: 'Track country coverage.' },
+  { type: 'state', label: 'States / Regions', helper: 'Filter by visited countries.' },
   { type: 'city', label: 'Major Cities', helper: 'Curated fast list.' },
-  { type: 'airport', label: 'Major Airports', helper: 'Medium + large hubs.' },
-  { type: 'site', label: 'World Heritage Sites', helper: 'Curated top sights.' },
+  { type: 'airport', label: 'Major Airports', helper: 'Use these for trip logs too.' },
+  { type: 'site', label: 'Sites & Lists', helper: 'UNESCO, parks, wonders, and food/drink lists.' },
 ];
 
 const profilePalette = ['#22c55e', '#f97316', '#38bdf8', '#e879f9', '#facc15', '#fb7185'];
+const defaultProfileColor = profilePalette[0];
+
+function normalizeHexColor(raw: string | undefined, fallback = defaultProfileColor) {
+  const value = (raw ?? '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : fallback;
+}
+
+function darkenHexColor(hex: string, amount = 0.28) {
+  const normalized = normalizeHexColor(hex);
+  const parsed = Number.parseInt(normalized.slice(1), 16);
+  const r = (parsed >> 16) & 0xff;
+  const g = (parsed >> 8) & 0xff;
+  const b = parsed & 0xff;
+  const ratio = Math.max(0, Math.min(1, amount));
+  const darken = (channel: number) => Math.max(0, Math.min(255, Math.round(channel * (1 - ratio))));
+  const toHex = (channel: number) => darken(channel).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function contrastingColor(hex: string) {
+  const normalized = normalizeHexColor(hex);
+  const parsed = Number.parseInt(normalized.slice(1), 16);
+  const r = (parsed >> 16) & 0xff;
+  const g = (parsed >> 8) & 0xff;
+  const b = parsed & 0xff;
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.55 ? '#0b1220' : '#f8fafc';
+}
 
 const baseStyle = {
   version: 8,
@@ -69,6 +215,55 @@ const baseStyle = {
   ],
 };
 
+type ThemeMode = 'dark' | 'light';
+
+const mapThemeTokens: Record<
+  ThemeMode,
+  {
+    countryDefault: string;
+    countryOutline: string;
+    clusterColor: string;
+    stroke: string;
+    city: string;
+    airport: string;
+    site: string;
+    route: string;
+    rasterSaturation: number;
+    rasterContrast: number;
+    rasterBrightnessMin: number;
+    rasterBrightnessMax: number;
+  }
+> = {
+  dark: {
+    countryDefault: '#334155',
+    countryOutline: '#0f172a',
+    clusterColor: '#38bdf8',
+    stroke: '#0f172a',
+    city: '#38bdf8',
+    airport: '#f97316',
+    site: '#e879f9',
+    route: '#f59e0b',
+    rasterSaturation: -0.35,
+    rasterContrast: 0.08,
+    rasterBrightnessMin: 0.15,
+    rasterBrightnessMax: 0.72,
+  },
+  light: {
+    countryDefault: '#cbd5e1',
+    countryOutline: '#94a3b8',
+    clusterColor: '#0369a1',
+    stroke: '#f8fafc',
+    city: '#0ea5e9',
+    airport: '#f97316',
+    site: '#be185d',
+    route: '#d97706',
+    rasterSaturation: -0.05,
+    rasterContrast: 0,
+    rasterBrightnessMin: 0.85,
+    rasterBrightnessMax: 1.15,
+  },
+};
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
@@ -81,42 +276,185 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 function App() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const countryGeoRef = useRef<CountryFeatureCollection | null>(null);
+  const countryGeoRef = useRef<MapFeatureCollection | null>(null);
+  const stateGeoRef = useRef<MapFeatureCollection | null>(null);
 
   const [isMapReady, setIsMapReady] = useState(false);
   const [uiError, setUiError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
+  const [showCreateProfileModal, setShowCreateProfileModal] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isProfileSubmitting, setIsProfileSubmitting] = useState(false);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerDisplayName, setRegisterDisplayName] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [adminProfiles, setAdminProfiles] = useState<AdminProfile[]>([]);
+  const [adminSettings, setAdminSettings] = useState<AppSettings | null>(null);
+  const [newAdminUserUsername, setNewAdminUserUsername] = useState('');
+  const [newAdminUserDisplayName, setNewAdminUserDisplayName] = useState('');
+  const [newAdminUserPassword, setNewAdminUserPassword] = useState('');
+  const [newAdminUserIsAdmin, setNewAdminUserIsAdmin] = useState(false);
+  const [newAdminProfileName, setNewAdminProfileName] = useState('');
+  const [newAdminProfileOwnerId, setNewAdminProfileOwnerId] = useState('');
+  const [newAdminProfileColor, setNewAdminProfileColor] = useState(defaultProfileColor);
+  const [newAdminProfilePublic, setNewAdminProfilePublic] = useState(false);
+  const [adminPasswordReset, setAdminPasswordReset] = useState<Record<number, string>>({});
+  const [mainView, setMainView] = useState<MainView>('map');
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const stored = localStorage.getItem('tracker-theme');
+    return stored === 'light' ? 'light' : 'dark';
+  });
 
   const [activeTab, setActiveTab] = useState<PlaceType>('country');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState<ActiveProfile>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [tripLogs, setTripLogs] = useState<TripLog[]>([]);
+  const [showTripRoutes, setShowTripRoutes] = useState(false);
+  const [showTripForm, setShowTripForm] = useState(false);
+  const [tripForm, setTripForm] = useState({
+    flown_on: '',
+    origin_place_id: '',
+    origin_query: '',
+    destination_place_id: '',
+    destination_query: '',
+    layovers: [''],
+    layover_queries: [''],
+  });
+
   const [places, setPlaces] = useState<Record<PlaceType, Place[]>>({
     country: [],
+    state: [],
     city: [],
     airport: [],
     site: [],
   });
   const [visits, setVisits] = useState<Visit[]>([]);
   const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileColor, setNewProfileColor] = useState(defaultProfileColor);
+  const [newProfilePublic, setNewProfilePublic] = useState(false);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [selectedProfileColor, setSelectedProfileColor] = useState(defaultProfileColor);
+  const [selectedProfilePublic, setSelectedProfilePublic] = useState(false);
   const [showFirstProfilePrompt, setShowFirstProfilePrompt] = useState(false);
   const [search, setSearch] = useState<Record<PlaceType, string>>({
     country: '',
+    state: '',
     city: '',
     airport: '',
     site: '',
   });
+  const [selectedAirportSearchId, setSelectedAirportSearchId] = useState('');
   const [visitedOnly, setVisitedOnly] = useState<Record<PlaceType, boolean>>({
     country: false,
+    state: false,
     city: false,
     airport: false,
     site: false,
   });
+  const [siteCategoryFilter, setSiteCategoryFilter] = useState('all');
+  const [countryScope, setCountryScope] = useState<Record<'state' | 'city', CountryScope>>({
+    state: 'countries',
+    city: 'countries',
+  });
 
   const profileColorById = useMemo(() => {
     const map = new Map<number, string>();
-    profiles.forEach((profile, index) => map.set(profile.id, profilePalette[index % profilePalette.length]));
+    profiles.forEach((profile, index) =>
+      map.set(profile.id, normalizeHexColor(profile.color, profilePalette[index % profilePalette.length])),
+    );
     return map;
   }, [profiles]);
+
+  useEffect(() => {
+    if (typeof profileId !== 'number') {
+      setSelectedProfileColor(defaultProfileColor);
+      setSelectedProfilePublic(false);
+      return;
+    }
+    const active = profiles.find((profile) => profile.id === profileId);
+    setEditProfileName(active?.name ?? '');
+    setSelectedProfileColor(normalizeHexColor(active?.color));
+    setSelectedProfilePublic(Boolean(active?.is_public));
+  }, [profiles, profileId]);
+
+  const airportOptions = useMemo(() => {
+    return [...places.airport]
+      .filter((airport) => Boolean(airport.airport_code))
+      .sort((a, b) => {
+        const aa = `${a.name} ${a.airport_code ?? ''}`;
+        const bb = `${b.name} ${b.airport_code ?? ''}`;
+        return aa.localeCompare(bb);
+      });
+  }, [places.airport]);
+
+  const siteCategories = useMemo(() => {
+    const categories = new Set(
+      places.site
+        .map((site) => (site.category || '').trim().toLowerCase())
+        .filter((category) => Boolean(category)),
+    );
+    return ['all', ...Array.from(categories).sort()];
+  }, [places.site]);
+
+  const airportLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    airportOptions.forEach((airport) => {
+      map.set(airport.id, `${airport.name} (${airport.airport_code})`);
+    });
+    return map;
+  }, [airportOptions]);
+
+  const airportIdByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    airportLabelById.forEach((label, id) => map.set(label, id));
+    return map;
+  }, [airportLabelById]);
+
+  const airportIdByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    airportOptions.forEach((airport) => {
+      const code = airport.airport_code?.toUpperCase();
+      if (code && !map.has(code)) {
+        map.set(code, airport.id);
+      }
+    });
+    return map;
+  }, [airportOptions]);
+
+  const airportAutocomplete = (input: string) => {
+    const normalized = input.trim().toLowerCase();
+    if (!normalized) return airportOptions.slice(0, 60);
+    return airportOptions
+      .filter((airport) => {
+        const code = airport.airport_code?.toLowerCase() ?? '';
+        const haystack = `${airport.name.toLowerCase()} ${code} ${airport.search_location ?? ''}`;
+        return haystack.includes(normalized);
+      })
+      .slice(0, 60);
+  };
+
+  const resolveAirportId = (value: string) => {
+    const input = value.trim();
+    if (!input) return '';
+
+    const labelMatch = airportIdByLabel.get(input);
+    if (labelMatch) return labelMatch;
+
+    const codeMatch = input.match(/\(([A-Za-z]{3})\)$/);
+    if (codeMatch) {
+      return airportIdByCode.get(codeMatch[1].toUpperCase()) ?? '';
+    }
+    return airportIdByCode.get(input.toUpperCase()) ?? '';
+  };
 
   const visitedIds = useMemo(() => {
     if (profileId === 'all') {
@@ -125,68 +463,176 @@ function App() {
     return new Set(visits.filter((visit) => visit.profile_id === profileId).map((visit) => visit.place_id));
   }, [visits, profileId]);
 
+  const selectedProfile = useMemo(
+    () => (typeof profileId === 'number' ? profiles.find((profile) => profile.id === profileId) ?? null : null),
+    [profiles, profileId],
+  );
+  const canEditSelectedProfile = Boolean(authSession?.authenticated && selectedProfile?.is_owned);
+  const isAdmin = Boolean(authSession?.user?.is_admin);
+  const ownedProfiles = useMemo(() => profiles.filter((profile) => profile.is_owned), [profiles]);
+  const publicProfiles = useMemo(() => profiles.filter((profile) => !profile.is_owned && profile.is_public), [profiles]);
+
+  const visitedCountryCodes = useMemo(() => {
+    const codes = new Set<string>();
+    visitedIds.forEach((id) => {
+      if (id.startsWith('country-')) {
+        codes.add(id.replace('country-', '').toUpperCase());
+      }
+    });
+    return codes;
+  }, [visitedIds]);
+
+  const visitedCountryScopeOptions = useMemo(() => {
+    const options = places.country
+      .filter((country) => country.country_code && visitedCountryCodes.has(country.country_code.toUpperCase()))
+      .map((country) => ({
+        code: (country.country_code || '').toUpperCase(),
+        label: country.name,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return options;
+  }, [places.country, visitedCountryCodes]);
+
+  useEffect(() => {
+    localStorage.setItem('tracker-theme', themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<AuthSession>('/api/auth/session')
+      .then((session) => {
+        if (cancelled) return;
+        setAuthSession(session);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAuthSession({ oidc_enabled: false, authenticated: false, user: null });
+        setUiError('Unable to load authentication state.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const canLoadAppData = !authLoading;
+
+  const refreshAuthSession = async () => {
+    const session = await api<AuthSession>('/api/auth/session');
+    setAuthSession(session);
+    setAdminSettings(session.app_settings ?? null);
+    return session;
+  };
+
+  const refreshAdminData = async () => {
+    if (!isAdmin) return;
+    const [users, serverProfiles, settings] = await Promise.all([
+      api<AdminUser[]>('/api/admin/users'),
+      api<AdminProfile[]>('/api/admin/profiles'),
+      api<AppSettings>('/api/admin/settings'),
+    ]);
+    setAdminUsers(users);
+    setAdminProfiles(serverProfiles);
+    setAdminSettings(settings);
+  };
+
   const refreshProfiles = async () => {
     const data = await api<Profile[]>('/api/profiles');
     setProfiles(data);
+    const ownedProfiles = data.filter((profile) => profile.is_owned);
+    const publicProfiles = data.filter((profile) => !profile.is_owned && profile.is_public);
+    const preferred = authSession?.authenticated ? ownedProfiles[0] ?? publicProfiles[0] : publicProfiles[0];
 
-    if (data.length === 0) {
-      setProfileId(null);
-      setShowFirstProfilePrompt(true);
-      return;
+    const hasCurrentSelection = typeof profileId === 'number' && data.some((profile) => profile.id === profileId);
+    if (!hasCurrentSelection) {
+      setProfileId(preferred?.id ?? null);
     }
-
-    setShowFirstProfilePrompt(false);
-    if (profileId === null) {
-      setProfileId(data[0].id);
-    } else if (typeof profileId === 'number' && !data.some((profile) => profile.id === profileId)) {
-      setProfileId(data[0].id);
-    }
+    setShowFirstProfilePrompt(Boolean(authSession?.authenticated) && ownedProfiles.length === 0);
   };
 
-  const refreshVisitsAndStats = async (active: ActiveProfile) => {
+  const refreshVisitsStatsAndTrips = async (active: ActiveProfile) => {
     if (active === null) {
       setVisits([]);
       setStats(null);
+      setTripLogs([]);
       return;
     }
 
     const visitsPath = active === 'all' ? '/api/visits' : `/api/visits?profile_id=${active}`;
     const statsPath = active === 'all' ? '/api/stats' : `/api/stats?profile_id=${active}`;
+    const tripsPath = active === 'all' ? '/api/trip-logs' : `/api/trip-logs?profile_id=${active}`;
 
-    const [visitsData, statsData] = await Promise.all([
+    const [visitsData, statsData, tripsData] = await Promise.all([
       api<Visit[]>(visitsPath),
       api<Stats>(statsPath),
+      api<TripLog[]>(tripsPath),
     ]);
 
     setVisits(visitsData);
     setStats(statsData);
+    setTripLogs(tripsData);
   };
 
   useEffect(() => {
+    if (!canLoadAppData) return;
     refreshProfiles().catch(() => {
       setProfiles([]);
+      setProfileId(null);
       setUiError('Unable to load profiles.');
     });
-  }, []);
+  }, [canLoadAppData, authSession?.authenticated]);
 
   useEffect(() => {
-    refreshVisitsAndStats(profileId).catch(() => {
+    if (!isAdmin) {
+      setAdminUsers([]);
+      setAdminProfiles([]);
+      return;
+    }
+    refreshAdminData().catch(() => {
+      setUiError('Unable to load admin settings.');
+    });
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!canLoadAppData) return;
+    refreshVisitsStatsAndTrips(profileId).catch(() => {
       setVisits([]);
       setStats(null);
-      setUiError('Unable to load visits/stats.');
+      setTripLogs([]);
+      setUiError('Unable to load visits/trips/stats.');
     });
-  }, [profileId]);
+  }, [profileId, canLoadAppData]);
 
   useEffect(() => {
+    if (!canLoadAppData) return;
+    let isCancelled = false;
     tabs.forEach(async (tab) => {
       try {
-        const response = await api<{ items: Place[] }>(`/api/places?type=${tab.type}&limit=10000`);
+        const airportParam = tab.type === 'airport' ? '&major_only=true' : '';
+        const limitByType: Record<PlaceType, number> = {
+          country: 400,
+          state: 10000,
+          city: 12000,
+          airport: 10000,
+          site: 3000,
+        };
+        const response = await api<{ items: Place[] }>(
+          `/api/places?type=${tab.type}&limit=${limitByType[tab.type]}${airportParam}`,
+        );
+        if (isCancelled) return;
         setPlaces((prev) => ({ ...prev, [tab.type]: response.items }));
       } catch {
+        if (isCancelled) return;
         setUiError(`Unable to load ${tab.label.toLowerCase()}.`);
       }
     });
-  }, []);
+    return () => {
+      isCancelled = true;
+    };
+  }, [canLoadAppData]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -204,8 +650,13 @@ function App() {
 
     map.on('load', async () => {
       try {
-        const countryGeo = await api<CountryFeatureCollection>('/api/places/geojson?type=country');
+        const theme = mapThemeTokens[themeMode];
+        const [countryGeo, stateGeo] = await Promise.all([
+          api<MapFeatureCollection>('/api/places/geojson?type=country'),
+          api<MapFeatureCollection>('/api/places/geojson?type=state'),
+        ]);
         countryGeoRef.current = countryGeo;
+        stateGeoRef.current = stateGeo;
 
         map.addSource('countries', { type: 'geojson', data: countryGeo as any });
         map.addLayer({
@@ -213,7 +664,7 @@ function App() {
           type: 'fill',
           source: 'countries',
           paint: {
-            'fill-color': ['coalesce', ['get', 'visit_color'], '#334155'],
+            'fill-color': ['coalesce', ['get', 'visit_color'], theme.countryDefault],
             'fill-opacity': ['case', ['boolean', ['get', 'visited'], false], 0.55, 0.15],
           },
         });
@@ -221,7 +672,21 @@ function App() {
           id: 'country-outline',
           type: 'line',
           source: 'countries',
-          paint: { 'line-color': '#0f172a', 'line-width': 1 },
+          paint: { 'line-color': theme.countryOutline, 'line-width': 1 },
+        });
+        map.addSource('trip-routes', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] } as any,
+        });
+        map.addLayer({
+          id: 'trip-routes-line',
+          type: 'line',
+          source: 'trip-routes',
+          paint: {
+            'line-color': ['coalesce', ['get', 'route_color'], theme.route],
+            'line-width': 2.5,
+            'line-opacity': 0.75,
+          },
         });
 
         map.addSource('points', {
@@ -231,22 +696,54 @@ function App() {
           clusterMaxZoom: 5,
           clusterRadius: 40,
         });
+        map.addSource('visited-states', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] } as any,
+        });
+        map.addLayer({
+          id: 'visited-states-fill',
+          type: 'fill',
+          source: 'visited-states',
+          filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+          paint: {
+            'fill-color': ['coalesce', ['get', 'marker_color'], theme.route],
+            'fill-opacity': 0.5,
+          },
+        });
+        map.addLayer({
+          id: 'visited-states-outline',
+          type: 'line',
+          source: 'visited-states',
+          filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+          paint: {
+            'line-color': ['coalesce', ['get', 'marker_stroke'], theme.stroke],
+            'line-width': 1.3,
+            'line-opacity': 0.95,
+          },
+        });
+        map.addLayer({
+          id: 'visited-states-ring',
+          type: 'circle',
+          source: 'visited-states',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-color': ['coalesce', ['get', 'marker_color'], theme.route],
+            'circle-opacity': 0.9,
+            'circle-radius': 8,
+            'circle-stroke-color': ['coalesce', ['get', 'marker_stroke'], theme.stroke],
+            'circle-stroke-width': 1.3,
+            'circle-stroke-opacity': 0.9,
+          },
+        });
         map.addLayer({
           id: 'clusters',
           type: 'circle',
           source: 'points',
           filter: ['has', 'point_count'],
           paint: {
-            'circle-color': '#38bdf8',
+            'circle-color': theme.clusterColor,
             'circle-radius': ['step', ['get', 'point_count'], 12, 8, 18, 30, 24],
           },
-        });
-        map.addLayer({
-          id: 'cluster-count',
-          type: 'symbol',
-          source: 'points',
-          filter: ['has', 'point_count'],
-          layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
         });
         map.addLayer({
           id: 'points',
@@ -256,13 +753,13 @@ function App() {
           paint: {
             'circle-color': [
               'case',
-              ['==', ['get', 'point_type'], 'city'], '#38bdf8',
-              ['==', ['get', 'point_type'], 'airport'], '#f97316',
-              ['==', ['get', 'point_type'], 'site'], '#e879f9',
-              '#f97316',
+              ['==', ['get', 'point_type'], 'city'], theme.city,
+              ['==', ['get', 'point_type'], 'airport'], theme.airport,
+              ['==', ['get', 'point_type'], 'site'], theme.site,
+              theme.airport,
             ],
             'circle-radius': 6,
-            'circle-stroke-color': ['coalesce', ['get', 'profile_color'], '#0f172a'],
+            'circle-stroke-color': ['coalesce', ['get', 'profile_color'], theme.stroke],
             'circle-stroke-width': 1,
           },
         });
@@ -275,23 +772,74 @@ function App() {
     });
 
     mapRef.current = map;
-    return () => map.remove();
+    return () => {
+      mapRef.current = null;
+      map.remove();
+    };
   }, []);
 
   useEffect(() => {
+    if (mainView !== 'map') return;
     const map = mapRef.current;
-    if (!map || !isMapReady || !map.isStyleLoaded()) return;
+    if (!map) return;
+    const timer = window.setTimeout(() => map.resize(), 0);
+    return () => window.clearTimeout(timer);
+  }, [mainView]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) return;
+    const theme = mapThemeTokens[themeMode];
+    map.setPaintProperty('country-fill', 'fill-color', ['coalesce', ['get', 'visit_color'], theme.countryDefault]);
+    map.setPaintProperty('country-outline', 'line-color', theme.countryOutline);
+    map.setPaintProperty('clusters', 'circle-color', theme.clusterColor);
+    map.setPaintProperty('trip-routes-line', 'line-color', ['coalesce', ['get', 'route_color'], theme.route]);
+    map.setPaintProperty('visited-states-fill', 'fill-color', ['coalesce', ['get', 'marker_color'], theme.route]);
+    map.setPaintProperty('visited-states-outline', 'line-color', ['coalesce', ['get', 'marker_stroke'], theme.stroke]);
+    map.setPaintProperty('visited-states-ring', 'circle-color', ['coalesce', ['get', 'marker_color'], theme.route]);
+    map.setPaintProperty('visited-states-ring', 'circle-stroke-color', [
+      'coalesce',
+      ['get', 'marker_stroke'],
+      theme.stroke,
+    ]);
+    map.setPaintProperty('points', 'circle-color', [
+      'case',
+      ['==', ['get', 'point_type'], 'city'],
+      theme.city,
+      ['==', ['get', 'point_type'], 'airport'],
+      theme.airport,
+      ['==', ['get', 'point_type'], 'site'],
+      theme.site,
+      theme.airport,
+    ]);
+    map.setPaintProperty('points', 'circle-stroke-color', ['coalesce', ['get', 'profile_color'], theme.stroke]);
+    map.setPaintProperty('osm', 'raster-saturation', theme.rasterSaturation);
+    map.setPaintProperty('osm', 'raster-contrast', theme.rasterContrast);
+    map.setPaintProperty('osm', 'raster-brightness-min', theme.rasterBrightnessMin);
+    map.setPaintProperty('osm', 'raster-brightness-max', theme.rasterBrightnessMax);
+  }, [themeMode, isMapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) return;
 
     const countrySource = map.getSource('countries') as maplibregl.GeoJSONSource | undefined;
     const pointSource = map.getSource('points') as maplibregl.GeoJSONSource | undefined;
-    if (!countrySource || !pointSource || !countryGeoRef.current) return;
+    const routeSource = map.getSource('trip-routes') as maplibregl.GeoJSONSource | undefined;
+    const visitedStatesSource = map.getSource('visited-states') as maplibregl.GeoJSONSource | undefined;
+    if (!countrySource || !pointSource || !routeSource || !visitedStatesSource || !countryGeoRef.current || !stateGeoRef.current) {
+      return;
+    }
 
     const activeVisits =
       profileId === 'all' ? visits : visits.filter((visit) => visit.profile_id === profileId);
 
     const countryColorById = new Map<string, string>();
     activeVisits.forEach((visit) => {
-      const color = profileId === 'all' ? profileColorById.get(visit.profile_id) ?? '#22c55e' : '#22c55e';
+      const color =
+        profileId === 'all'
+          ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
+          : profileColorById.get(profileId) ?? defaultProfileColor;
       countryColorById.set(visit.place_id, color);
     });
 
@@ -316,7 +864,14 @@ function App() {
         const place = pointLookup.get(visit.place_id);
         if (!place || place.lat === undefined || place.lon === undefined) return null;
 
-        const profileColor = profileId === 'all' ? profileColorById.get(visit.profile_id) ?? '#f97316' : '#0f172a';
+        const profileColor =
+          profileId === 'all'
+            ? profileColorById.get(visit.profile_id) ?? mapThemeTokens[themeMode].airport
+            : mapThemeTokens[themeMode].stroke;
+        const baseColor =
+          profileId === 'all'
+            ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
+            : profileColorById.get(profileId) ?? defaultProfileColor;
         const pointType = place.id.startsWith('city-')
           ? 'city'
           : place.id.startsWith('airport-')
@@ -330,30 +885,136 @@ function App() {
           properties: {
             name: place.name,
             point_type: pointType,
-            profile_color: profileColor,
+            profile_color: profileId === 'all' ? profileColor : contrastingColor(baseColor),
           },
         };
       })
       .filter(Boolean);
 
     pointSource.setData({ type: 'FeatureCollection', features: pointFeatures } as any);
-  }, [places, visits, profileId, profileColorById, isMapReady]);
 
-  const filteredPlaces = useMemo(
-    () =>
-      tabs.reduce((acc, tab) => {
-        const term = search[tab.type].toLowerCase();
-        acc[tab.type] = places[tab.type]
-          .filter((place) => place.name.toLowerCase().includes(term))
-          .filter((place) => (visitedOnly[tab.type] ? visitedIds.has(place.id) : true))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        return acc;
-      }, {} as Record<PlaceType, Place[]>),
-    [places, search, visitedOnly, visitedIds],
+    const stateMarkerColorById = new Map<string, string>();
+    activeVisits.forEach((visit) => {
+      if (!visit.place_id.startsWith('state-')) return;
+      const baseColor =
+        profileId === 'all'
+          ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
+          : profileColorById.get(profileId) ?? defaultProfileColor;
+      stateMarkerColorById.set(visit.place_id, darkenHexColor(baseColor, 0.28));
+    });
+
+    const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature]));
+    const stateFeatures = activeVisits
+      .map((visit) => stateLookup.get(visit.place_id))
+      .filter((feature): feature is MapFeatureCollection['features'][number] => Boolean(feature?.geometry))
+      .map((feature) => ({
+        type: 'Feature',
+        id: feature.id,
+        geometry: feature.geometry,
+        properties: {
+          ...feature.properties,
+          marker_color: stateMarkerColorById.get(feature.id) ?? darkenHexColor(defaultProfileColor, 0.28),
+          marker_stroke: contrastingColor(
+            stateMarkerColorById.get(feature.id) ?? darkenHexColor(defaultProfileColor, 0.28),
+          ),
+        },
+      }));
+    visitedStatesSource.setData({ type: 'FeatureCollection', features: stateFeatures } as any);
+
+    const routeFeatures: Array<Record<string, unknown>> = [];
+    const activeTrips =
+      profileId === 'all' ? tripLogs : tripLogs.filter((trip) => trip.profile_id === profileId);
+
+    activeTrips.forEach((trip) => {
+      for (let index = 1; index < trip.route_points.length; index += 1) {
+        const fromPoint = trip.route_points[index - 1];
+        const toPoint = trip.route_points[index];
+        routeFeatures.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [fromPoint.lon, fromPoint.lat],
+              [toPoint.lon, toPoint.lat],
+            ],
+          },
+          properties: {
+            route_color:
+              profileId === 'all'
+                ? profileColorById.get(trip.profile_id) ?? mapThemeTokens[themeMode].route
+                : mapThemeTokens[themeMode].route,
+            trip_id: trip.id,
+            segment: `${fromPoint.name} -> ${toPoint.name}`,
+          },
+        });
+      }
+    });
+
+    routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
+    map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
+  }, [places, visits, tripLogs, profileId, profileColorById, isMapReady, showTripRoutes, themeMode]);
+
+  const activeFilteredPlaces = useMemo(() => {
+    const term = search[activeTab].toLowerCase();
+    let scopedPlaces = places[activeTab];
+
+    if (activeTab === 'state' || activeTab === 'city') {
+      const scope = countryScope[activeTab];
+      if (scope === 'countries') {
+        scopedPlaces = scopedPlaces.filter(
+          (place) => place.country_code && visitedCountryCodes.has(place.country_code.toUpperCase()),
+        );
+      } else if (scope.startsWith('country:')) {
+        const code = scope.replace('country:', '').toUpperCase();
+        scopedPlaces = scopedPlaces.filter((place) => (place.country_code || '').toUpperCase() === code);
+      }
+    }
+
+    const filtered = scopedPlaces
+      .filter((place) =>
+        activeTab === 'site' && siteCategoryFilter !== 'all'
+          ? (place.category || '').toLowerCase() === siteCategoryFilter
+          : true,
+      )
+      .filter((place) => {
+        if (activeTab === 'state') {
+          const fallbackState = place.state_code || place.id.replace(/^state-[^-]+-/, '') || '';
+          return `${place.name || fallbackState} ${place.country_code || ''}`.toLowerCase().includes(term);
+        }
+        if (activeTab === 'airport') {
+          if (selectedAirportSearchId) {
+            return place.id === selectedAirportSearchId;
+          }
+          return `${place.name} ${place.airport_code ?? ''} ${place.search_location ?? ''}`
+            .toLowerCase()
+            .includes(term);
+        }
+        return place.name.toLowerCase().includes(term);
+      })
+      .filter((place) => (visitedOnly[activeTab] ? visitedIds.has(place.id) : true))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return filtered;
+  }, [
+    activeTab,
+    countryScope,
+    places,
+    search,
+    selectedAirportSearchId,
+    siteCategoryFilter,
+    visitedCountryCodes,
+    visitedIds,
+    visitedOnly,
+  ]);
+
+  const MAX_VISIBLE_LIST_ITEMS = 1200;
+  const visiblePlaces = useMemo(
+    () => activeFilteredPlaces.slice(0, MAX_VISIBLE_LIST_ITEMS),
+    [activeFilteredPlaces],
   );
 
   const onToggleVisit = async (place: Place) => {
-    if (typeof profileId !== 'number') return;
+    if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
     try {
       await api('/api/visits/toggle', {
         method: 'POST',
@@ -364,7 +1025,7 @@ function App() {
           visited: !visitedIds.has(place.id),
         }),
       });
-      await refreshVisitsAndStats(profileId);
+      await refreshVisitsStatsAndTrips(profileId);
     } catch {
       setUiError('Could not update visit.');
     }
@@ -375,7 +1036,7 @@ function App() {
     if (!map) return;
 
     if (place.id.startsWith('country-')) {
-      const geo = countryGeoRef.current ?? (await api<CountryFeatureCollection>('/api/places/geojson?type=country'));
+      const geo = countryGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=country'));
       const feature = geo.features.find((item) => item.id === place.id);
       if (!feature) return;
 
@@ -400,42 +1061,67 @@ function App() {
   };
 
   const handleCreateProfile = async (name?: string) => {
+    if (!authSession?.authenticated) return;
     const candidate = (name ?? newProfileName).trim();
-    if (!candidate) return;
+    if (!candidate || isProfileSubmitting) return;
 
-    const profile = await api<Profile>('/api/profiles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: candidate }),
-    });
+    setIsProfileSubmitting(true);
+    try {
+      const profile = await api<Profile>('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: candidate,
+          color: normalizeHexColor(newProfileColor),
+          is_public: Boolean(newProfilePublic),
+        }),
+      });
 
-    setNewProfileName('');
-    await refreshProfiles();
-    setProfileId(profile.id);
-    setShowFirstProfilePrompt(false);
+      setNewProfileName('');
+      setNewProfileColor(defaultProfileColor);
+      setNewProfilePublic(false);
+      setShowCreateProfileModal(false);
+      await refreshProfiles();
+      setProfileId(profile.id);
+      setShowFirstProfilePrompt(false);
+    } finally {
+      setIsProfileSubmitting(false);
+    }
   };
 
   const handleDeleteProfile = async () => {
-    if (typeof profileId !== 'number') return;
-    if (!window.confirm('Delete this profile and all its visits?')) return;
+    if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
+    if (!window.confirm('Delete this profile and all its visits/trip logs?')) return;
 
     await api(`/api/profiles/${profileId}`, { method: 'DELETE' });
     await refreshProfiles();
   };
 
   const handleEditProfile = async () => {
-    if (typeof profileId !== 'number') return;
+    if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
+    setShowEditProfileModal(true);
+  };
 
-    const current = profiles.find((profile) => profile.id === profileId);
-    const nextName = window.prompt('Rename profile', current?.name ?? '');
-    if (!nextName || !nextName.trim()) return;
-
-    await api(`/api/profiles/${profileId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nextName.trim() }),
-    });
-    await refreshProfiles();
+  const handleSaveProfileEdits = async () => {
+    if (typeof profileId !== 'number' || !canEditSelectedProfile || isProfileSubmitting) return;
+    const currentName = editProfileName.trim();
+    if (!currentName) return;
+    setIsProfileSubmitting(true);
+    try {
+      await api(`/api/profiles/${profileId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: currentName,
+          color: normalizeHexColor(selectedProfileColor),
+          is_public: selectedProfilePublic,
+        }),
+      });
+      setShowEditProfileModal(false);
+      await refreshProfiles();
+    } finally {
+      setIsProfileSubmitting(false);
+    }
   };
 
   const handleExport = async () => {
@@ -465,28 +1151,512 @@ function App() {
       if (!response.ok) {
         throw new Error('Import failed');
       }
-      await refreshVisitsAndStats(profileId);
+      await refreshVisitsStatsAndTrips(profileId);
     } catch {
       setUiError('Could not import data.');
     }
   };
 
+  const handleCreateTripLog = async () => {
+    if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
+
+    const layoverIds = tripForm.layovers.map((value) => value.trim()).filter(Boolean);
+    const invalidOrigin = tripForm.origin_query.trim() && !tripForm.origin_place_id;
+    const invalidDestination = tripForm.destination_query.trim() && !tripForm.destination_place_id;
+    const invalidLayover = tripForm.layover_queries.some((query, index) => query.trim() && !tripForm.layovers[index]);
+    if (invalidOrigin || invalidDestination || invalidLayover) {
+      setUiError('Please choose airports from the autocomplete list.');
+      return;
+    }
+    if (!tripForm.origin_place_id || !tripForm.destination_place_id) {
+      setUiError('Origin and destination are required for trip logs.');
+      return;
+    }
+
+    try {
+      await api<TripLog>('/api/trip-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile_id: profileId,
+          flown_on: tripForm.flown_on || null,
+          origin_place_id: tripForm.origin_place_id,
+          destination_place_id: tripForm.destination_place_id,
+          layover_place_ids: layoverIds,
+        }),
+      });
+
+      setTripForm({
+        flown_on: '',
+        origin_place_id: '',
+        origin_query: '',
+        destination_place_id: '',
+        destination_query: '',
+        layovers: [''],
+        layover_queries: [''],
+      });
+      setShowTripForm(false);
+      await refreshVisitsStatsAndTrips(profileId);
+    } catch {
+      setUiError('Could not create trip log.');
+    }
+  };
+
+  const handleDeleteTripLog = async (tripLogId: number) => {
+    if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
+    if (!window.confirm('Delete this trip log?')) return;
+
+    try {
+      await api(`/api/trip-logs/${tripLogId}`, { method: 'DELETE' });
+      await refreshVisitsStatsAndTrips(profileId);
+    } catch {
+      setUiError('Could not delete trip log.');
+    }
+  };
+
+  const handleAdminCreateUser = async () => {
+    if (!isAdmin || !newAdminUserUsername.trim() || !newAdminUserDisplayName.trim() || !newAdminUserPassword) return;
+    await api('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: newAdminUserUsername.trim().toLowerCase(),
+        display_name: newAdminUserDisplayName.trim(),
+        password: newAdminUserPassword,
+        is_admin: newAdminUserIsAdmin,
+      }),
+    });
+    setNewAdminUserUsername('');
+    setNewAdminUserDisplayName('');
+    setNewAdminUserPassword('');
+    setNewAdminUserIsAdmin(false);
+    await refreshAdminData();
+  };
+
+  const handleAdminUserRole = async (userId: number, role: 'admin' | 'user') => {
+    await api(`/api/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    await refreshAdminData();
+    await refreshAuthSession();
+  };
+
+  const handleAdminDeleteUser = async (userId: number) => {
+    if (!window.confirm('Delete this user and all of their profiles?')) return;
+    await api(`/api/admin/users/${userId}`, { method: 'DELETE' });
+    await refreshAdminData();
+  };
+
+  const handleAdminResetPassword = async (userId: number) => {
+    const password = adminPasswordReset[userId]?.trim();
+    if (!password) return;
+    await api(`/api/admin/users/${userId}/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    setAdminPasswordReset((prev) => ({ ...prev, [userId]: '' }));
+  };
+
+  const handleAdminDeleteProfile = async (serverProfileId: number) => {
+    if (!window.confirm('Delete this server profile?')) return;
+    await api(`/api/admin/profiles/${serverProfileId}`, { method: 'DELETE' });
+    await refreshAdminData();
+    await refreshProfiles();
+  };
+
+  const handleAdminCreateProfile = async () => {
+    if (!newAdminProfileName.trim() || !newAdminProfileOwnerId) return;
+    await api('/api/admin/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newAdminProfileName.trim(),
+        owner_user_id: Number(newAdminProfileOwnerId),
+        color: normalizeHexColor(newAdminProfileColor),
+        is_public: newAdminProfilePublic,
+      }),
+    });
+    setNewAdminProfileName('');
+    setNewAdminProfileOwnerId('');
+    setNewAdminProfileColor(defaultProfileColor);
+    setNewAdminProfilePublic(false);
+    await refreshAdminData();
+    await refreshProfiles();
+  };
+
+  const handleAdminEditProfile = async (serverProfile: AdminProfile) => {
+    const nextName = window.prompt('Profile name', serverProfile.name);
+    if (!nextName || !nextName.trim()) return;
+    const nextOwner = window.prompt('Owner user id (leave blank for none)', String(serverProfile.owner_user_id ?? ''));
+    const ownerUserId = nextOwner?.trim() ? Number(nextOwner.trim()) : null;
+    if (ownerUserId !== null && Number.isNaN(ownerUserId)) return;
+    await api(`/api/admin/profiles/${serverProfile.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: nextName.trim(),
+        owner_user_id: ownerUserId,
+      }),
+    });
+    await refreshAdminData();
+    await refreshProfiles();
+  };
+
+  const handleAdminToggleProfilePublic = async (serverProfile: AdminProfile) => {
+    await api(`/api/admin/profiles/${serverProfile.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_public: !serverProfile.is_public }),
+    });
+    await refreshAdminData();
+    await refreshProfiles();
+  };
+
+  const handleAdminSaveSettings = async () => {
+    if (!adminSettings) return;
+    const updated = await api<AppSettings>('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(adminSettings),
+    });
+    setAdminSettings(updated);
+  };
+
+  const formatPlaceLabel = (place: Place, type: PlaceType) => {
+    if (type === 'state') {
+      const stateName = place.name?.trim() || place.state_code || place.id.replace(/^state-[^-]+-/, '') || 'Unknown';
+      if (place.country_code) return `${stateName}, ${place.country_code}`;
+      return stateName;
+    }
+    if (type === 'city') {
+      const parts = [place.name];
+      if (place.state_code) parts.push(place.state_code);
+      if (place.country_code) parts.push(place.country_code);
+      return parts.join(', ');
+    }
+    if (type === 'airport') {
+      const code = place.airport_code ?? '---';
+      return `${place.name}\t${code}`;
+    }
+    return place.name;
+  };
+
+  const hemisphereTotals = {
+    northSouth: (stats?.hemispheres.north ?? 0) + (stats?.hemispheres.south ?? 0),
+    eastWest: (stats?.hemispheres.east ?? 0) + (stats?.hemispheres.west ?? 0),
+    combined:
+      (stats?.hemispheres.north ?? 0) +
+      (stats?.hemispheres.south ?? 0) +
+      (stats?.hemispheres.east ?? 0) +
+      (stats?.hemispheres.west ?? 0),
+  };
+  const hemispherePercents = {
+    north:
+      hemisphereTotals.northSouth > 0 ? ((stats?.hemispheres.north ?? 0) / hemisphereTotals.northSouth) * 100 : 0,
+    south:
+      hemisphereTotals.northSouth > 0 ? ((stats?.hemispheres.south ?? 0) / hemisphereTotals.northSouth) * 100 : 0,
+    east: hemisphereTotals.eastWest > 0 ? ((stats?.hemispheres.east ?? 0) / hemisphereTotals.eastWest) * 100 : 0,
+    west: hemisphereTotals.eastWest > 0 ? ((stats?.hemispheres.west ?? 0) / hemisphereTotals.eastWest) * 100 : 0,
+    northCombined:
+      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.north ?? 0) / hemisphereTotals.combined) * 100 : 0,
+    eastCombined:
+      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.east ?? 0) / hemisphereTotals.combined) * 100 : 0,
+    southCombined:
+      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.south ?? 0) / hemisphereTotals.combined) * 100 : 0,
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+      await refreshAuthSession();
+      setProfiles([]);
+      setProfileId(null);
+      setVisits([]);
+      setTripLogs([]);
+      setStats(null);
+      setShowSettingsOverlay(false);
+    } catch {
+      setUiError('Could not sign out.');
+    }
+  };
+
+  const handleLocalLogin = async () => {
+    const username = loginUsername.trim().toLowerCase();
+    const password = loginPassword;
+    if (!username || !password || isAuthSubmitting) return;
+    setUiError(null);
+    setIsAuthSubmitting(true);
+    try {
+      await api('/api/auth/local/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      setShowLoginModal(false);
+      setLoginPassword('');
+      await refreshAuthSession();
+      await refreshProfiles();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not sign in.';
+      setUiError(message);
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleLocalRegister = async () => {
+    const username = registerUsername.trim().toLowerCase();
+    const displayName = registerDisplayName.trim();
+    const password = registerPassword;
+    const confirm = registerConfirmPassword;
+    if (!username || !displayName || !password || isAuthSubmitting) return;
+    if (password !== confirm) {
+      setUiError('Password confirmation does not match.');
+      return;
+    }
+    setUiError(null);
+    setIsAuthSubmitting(true);
+    try {
+      await api('/api/auth/local/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, display_name: displayName, password }),
+      });
+      await refreshAuthSession();
+      await refreshProfiles();
+      setRegisterPassword('');
+      setRegisterConfirmPassword('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create user.';
+      setUiError(message);
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="app" data-theme={themeMode}>
+        <div className="first-run-modal">
+          <div className="first-run-card">
+            <h2>Loading</h2>
+            <p>Checking authentication session.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="app">
+    <div className="app" data-theme={themeMode}>
+      {!authSession?.authenticated && !authSession?.oidc_enabled && !authSession?.has_local_users && (
+        <div className="first-run-modal">
+          <div className="first-run-card">
+            <h2>Create your first user</h2>
+            <p>Users are required. Set up an account to unlock profile editing and tracking.</p>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleLocalRegister();
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Username"
+                value={registerUsername}
+                onChange={(event) => setRegisterUsername(event.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Display name"
+                value={registerDisplayName}
+                onChange={(event) => setRegisterDisplayName(event.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={registerPassword}
+                onChange={(event) => setRegisterPassword(event.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="Confirm password"
+                value={registerConfirmPassword}
+                onChange={(event) => setRegisterConfirmPassword(event.target.value)}
+              />
+              <button type="submit" disabled={isAuthSubmitting}>
+                {isAuthSubmitting ? 'Creating...' : 'Create user'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showLoginModal && !authSession?.authenticated && (
+        <div className="first-run-modal">
+          <div className="first-run-card">
+            <h2>Log in</h2>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleLocalLogin();
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Username"
+                value={loginUsername}
+                onChange={(event) => setLoginUsername(event.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+              />
+              <div className="modal-actions">
+                <button type="submit" disabled={isAuthSubmitting}>
+                  {isAuthSubmitting ? 'Signing in...' : 'Log in'}
+                </button>
+                <button type="button" onClick={() => setShowLoginModal(false)} disabled={isAuthSubmitting}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showFirstProfilePrompt && (
         <div className="first-run-modal">
           <div className="first-run-card">
-            <h2>Welcome 👋</h2>
-            <p>Name your first profile to get started.</p>
-            <input
-              type="text"
-              placeholder="Your name"
-              value={newProfileName}
-              onChange={(event) => setNewProfileName(event.target.value)}
-            />
-            <button type="button" onClick={() => handleCreateProfile()}>
-              Create profile
-            </button>
+            <h2>Create your first profile</h2>
+            <p>Profiles are private by default. Share only if you opt in.</p>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateProfile();
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Profile name"
+                value={newProfileName}
+                onChange={(event) => setNewProfileName(event.target.value)}
+              />
+              <label>
+                Color
+                <input
+                  type="color"
+                  value={newProfileColor}
+                  onChange={(event) => setNewProfileColor(normalizeHexColor(event.target.value))}
+                />
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={newProfilePublic}
+                  onChange={(event) => setNewProfilePublic(event.target.checked)}
+                />
+                Share this profile publicly
+              </label>
+              <button type="submit" disabled={isProfileSubmitting}>
+                {isProfileSubmitting ? 'Creating...' : 'Create profile'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateProfileModal && (
+        <div className="first-run-modal">
+          <div className="first-run-card">
+            <h2>Create profile</h2>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateProfile();
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Profile name"
+                value={newProfileName}
+                onChange={(event) => setNewProfileName(event.target.value)}
+              />
+              <label>
+                Color
+                <input
+                  type="color"
+                  value={newProfileColor}
+                  onChange={(event) => setNewProfileColor(normalizeHexColor(event.target.value))}
+                />
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={newProfilePublic}
+                  onChange={(event) => setNewProfilePublic(event.target.checked)}
+                />
+                Share this profile publicly
+              </label>
+              <div className="modal-actions">
+                <button type="submit" disabled={isProfileSubmitting}>
+                  {isProfileSubmitting ? 'Creating...' : 'Create'}
+                </button>
+                <button type="button" onClick={() => setShowCreateProfileModal(false)} disabled={isProfileSubmitting}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditProfileModal && selectedProfile && (
+        <div className="first-run-modal">
+          <div className="first-run-card">
+            <h2>Edit profile</h2>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSaveProfileEdits();
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Profile name"
+                value={editProfileName}
+                onChange={(event) => setEditProfileName(event.target.value)}
+              />
+              <label>
+                Color
+                <input
+                  type="color"
+                  value={selectedProfileColor}
+                  onChange={(event) => setSelectedProfileColor(normalizeHexColor(event.target.value))}
+                />
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedProfilePublic}
+                  onChange={(event) => setSelectedProfilePublic(event.target.checked)}
+                />
+                Share this profile publicly
+              </label>
+              <div className="modal-actions">
+                <button type="submit" disabled={isProfileSubmitting}>
+                  {isProfileSubmitting ? 'Saving...' : 'Save'}
+                </button>
+                <button type="button" onClick={() => setShowEditProfileModal(false)} disabled={isProfileSubmitting}>
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -494,49 +1664,93 @@ function App() {
       {uiError && <div className="ui-error">{uiError}</div>}
 
       <header className="header">
-        <div>
-          <h1>World Visited Tracker</h1>
-          <p>Track countries, cities, airports, and sites with profile-aware mapping.</p>
+        <div className="brand-panel">
+          <h1>AtlasTracker</h1>
+          <p>Profiles, routes, stats, and shared world coverage in one atlas.</p>
+          <div className="auth-controls">
+            <span className="auth-user">
+              {authSession?.authenticated
+                ? authSession.user?.display_name || authSession.user?.username || authSession.user?.email || 'Signed in'
+                : 'Not logged in'}
+            </span>
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+            >
+              {themeMode === 'dark' ? 'Light' : 'Dark'}
+            </button>
+            <button type="button" className="theme-toggle" onClick={() => setShowSettingsOverlay(true)}>
+              Settings
+            </button>
+            {authSession?.authenticated ? (
+              <button type="button" className="theme-toggle" onClick={handleLogout}>
+                Log out
+              </button>
+            ) : authSession?.oidc_enabled ? (
+              <button type="button" className="theme-toggle" onClick={() => (window.location.href = '/api/auth/login')}>
+                Log in
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="theme-toggle"
+                onClick={() => setShowLoginModal(true)}
+                disabled={!authSession?.has_local_users}
+              >
+                Log in
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="profile-controls">
+        <div className="profile-panel">
           <label>
             Profile
             <select
               value={profileId ?? ''}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value === 'all') setProfileId('all');
-                else if (value) setProfileId(Number(value));
+                if (value === '__create__') {
+                  setShowCreateProfileModal(true);
+                } else if (!value) {
+                  setProfileId(null);
+                } else {
+                  setProfileId(Number(value));
+                }
               }}
             >
-              {profiles.length > 0 && <option value="all">All Profiles</option>}
-              {profiles.map((profile) => (
+              {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
+              <option value="">Demo mode</option>
+              {ownedProfiles.length > 0 && (
+                <option value="" disabled>
+                  Your profiles
+                </option>
+              )}
+              {ownedProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
                   {profile.name}
+                </option>
+              ))}
+              {publicProfiles.length > 0 && (
+                <option value="" disabled>
+                  ----------
+                </option>
+              )}
+              {publicProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} (Public)
                 </option>
               ))}
             </select>
           </label>
 
-          <div className="profile-create">
-            <input
-              type="text"
-              placeholder="New profile"
-              value={newProfileName}
-              onChange={(event) => setNewProfileName(event.target.value)}
-            />
-            <button type="button" onClick={() => handleCreateProfile()}>
-              Add
-            </button>
-          </div>
-
           <div className="profile-actions">
             <span className="profile-actions-title">Profile actions</span>
-            <button type="button" onClick={handleEditProfile} disabled={typeof profileId !== 'number'}>
+            <button type="button" onClick={handleEditProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
               Edit
             </button>
-            <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number'}>
+            <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
               Delete
             </button>
             <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
@@ -548,42 +1762,48 @@ function App() {
                 type="file"
                 accept="application/json"
                 onChange={handleImport}
-                disabled={typeof profileId !== 'number'}
+                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
               />
             </label>
           </div>
-
-          {profileId === 'all' && (
-            <div className="legend">
-              {profiles.map((profile) => (
-                <div key={profile.id} className="legend-item">
-                  <span style={{ backgroundColor: profileColorById.get(profile.id) }} />
-                  {profile.name}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        <div className="stats">
+        <div className="profile-summary">
+          <div className="summary-card">
+            <span>Selected Profile</span>
+            <strong>{selectedProfile?.name ?? 'Demo mode'}</strong>
+            <small>
+              {selectedProfile
+                ? selectedProfile.is_public
+                  ? 'Shared publicly'
+                  : 'Private profile'
+                : 'Viewing public/demo atlas only'}
+            </small>
+          </div>
+          <div className="summary-card">
+            <span>Owner</span>
+            <strong>{selectedProfile?.is_owned ? 'You' : selectedProfile ? 'Public view' : 'AtlasTracker demo'}</strong>
+            <small>{selectedProfile ? normalizeHexColor(selectedProfile.color) : 'No profile selected'}</small>
+          </div>
+        </div>
+
+        <div className="highlights-rail">
           <div className="stat-card">
             <span>Countries</span>
             <strong>
               {stats?.countries.visited ?? 0} / {stats?.countries.total ?? 0}
             </strong>
-            <small>{stats?.countries.percent ?? 0}% world visited</small>
+            <small>{stats?.countries.percent ?? 0}% visited</small>
           </div>
           <div className="stat-card">
-            <span>Cities</span>
-            <strong>{stats?.cities.visited ?? 0}</strong>
+            <span>Trips / Miles</span>
+            <strong>{stats?.trip_logs.count ?? 0}</strong>
+            <small>{Math.round(stats?.trip_logs.estimated_miles ?? 0).toLocaleString()} mi total</small>
           </div>
           <div className="stat-card">
-            <span>Airports</span>
-            <strong>{stats?.airports.visited ?? 0}</strong>
-          </div>
-          <div className="stat-card">
-            <span>Sites</span>
-            <strong>{stats?.sites.visited ?? 0}</strong>
+            <span>Leaderboard</span>
+            <strong>{selectedProfile ? '#' : '--'}</strong>
+            <small>Coming soon</small>
           </div>
         </div>
       </header>
@@ -609,12 +1829,70 @@ function App() {
             </div>
 
             <div className="filters">
-              <input
-                type="search"
-                placeholder={`Search ${activeTab}...`}
-                value={search[activeTab]}
-                onChange={(event) => setSearch((prev) => ({ ...prev, [activeTab]: event.target.value }))}
-              />
+              {activeTab === 'airport' ? (
+                <>
+                  <datalist id="airport-search-options">
+                    {airportAutocomplete(search.airport).map((airport) => (
+                      <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
+                    ))}
+                  </datalist>
+                  <input
+                    type="search"
+                    list="airport-search-options"
+                    placeholder="Search airport by code, name, city, state"
+                    value={search.airport}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSearch((prev) => ({
+                        ...prev,
+                        airport: value,
+                      }));
+                      setSelectedAirportSearchId(resolveAirportId(value));
+                    }}
+                  />
+                </>
+              ) : (
+                <input
+                  type="search"
+                  placeholder={`Search ${activeTab}...`}
+                  value={search[activeTab]}
+                  onChange={(event) => setSearch((prev) => ({ ...prev, [activeTab]: event.target.value }))}
+                />
+              )}
+              {(activeTab === 'state' || activeTab === 'city') && (
+                <label className="scope-filter">
+                  Scope
+                  <select
+                    value={countryScope[activeTab]}
+                    onChange={(event) =>
+                      setCountryScope((prev) => ({
+                        ...prev,
+                        [activeTab]: event.target.value as CountryScope,
+                      }))
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="countries">Countries visited</option>
+                    {visitedCountryScopeOptions.map((country) => (
+                      <option key={country.code} value={`country:${country.code}`}>
+                        {country.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {activeTab === 'site' && (
+                <label className="scope-filter">
+                  Category
+                  <select value={siteCategoryFilter} onChange={(event) => setSiteCategoryFilter(event.target.value)}>
+                    {siteCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category === 'all' ? 'All categories' : category.replaceAll('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -628,30 +1906,709 @@ function App() {
             </div>
 
             <ul className="list">
-              {filteredPlaces[activeTab].map((place) => (
+              {activeTab === 'airport' && (
+                <li className="list-header">
+                  <span>MAJOR AIRPORT</span>
+                  <span>AIRPORT CODE</span>
+                </li>
+              )}
+              {visiblePlaces.map((place) => (
                 <li key={place.id}>
                   <label>
                     <input
                       type="checkbox"
                       checked={visitedIds.has(place.id)}
-                      disabled={typeof profileId !== 'number'}
+                      disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
                       onChange={() => onToggleVisit(place)}
                     />
-                    <span className="place-name" onClick={() => focusOnPlace(place)}>
-                      {place.name}
-                    </span>
-                    {place.country_code && <span>{place.country_code}</span>}
+                    {activeTab === 'airport' ? (
+                      <span className="place-name airport-name" onClick={() => focusOnPlace(place)}>
+                        <strong>{place.name}</strong>
+                        <small>{place.location || [place.country_code].filter(Boolean).join(', ')}</small>
+                      </span>
+                    ) : (
+                      <span className="place-name" onClick={() => focusOnPlace(place)}>
+                        {formatPlaceLabel(place, activeTab)}
+                      </span>
+                    )}
+                    {activeTab === 'airport' && <span className="airport-code">{place.airport_code}</span>}
+                    {activeTab !== 'city' && activeTab !== 'state' && activeTab !== 'airport' && place.country_code && (
+                      <span>{place.country_code}</span>
+                    )}
                   </label>
                 </li>
               ))}
+              {activeFilteredPlaces.length > MAX_VISIBLE_LIST_ITEMS && (
+                <li className="list-truncation-note">
+                  Showing first {MAX_VISIBLE_LIST_ITEMS.toLocaleString()} of{' '}
+                  {activeFilteredPlaces.length.toLocaleString()} results. Narrow search to reduce memory usage.
+                </li>
+              )}
             </ul>
           </div>
         </aside>
 
         <main className="map-area">
-          <div ref={mapContainerRef} className="map" />
+          <div className="main-tabs">
+            <button
+              type="button"
+              className={mainView === 'map' ? 'active' : ''}
+              onClick={() => setMainView('map')}
+            >
+              Map
+            </button>
+            <button
+              type="button"
+              className={mainView === 'trips' ? 'active' : ''}
+              onClick={() => setMainView('trips')}
+            >
+              Trip Logs
+            </button>
+            <button
+              type="button"
+              className={mainView === 'stats' ? 'active' : ''}
+              onClick={() => setMainView('stats')}
+            >
+              Stats
+            </button>
+            <button
+              type="button"
+              className={mainView === 'achievements' ? 'active' : ''}
+              onClick={() => setMainView('achievements')}
+            >
+              Achievements
+            </button>
+            <button
+              type="button"
+              className={mainView === 'leaderboard' ? 'active' : ''}
+              onClick={() => setMainView('leaderboard')}
+            >
+              Leaderboard
+            </button>
+          </div>
+
+          {mainView === 'map' && (
+            <div className="map-controls">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={showTripRoutes}
+                  onChange={(event) => setShowTripRoutes(event.target.checked)}
+                />
+                Show trip routes
+              </label>
+            </div>
+          )}
+
+          <div ref={mapContainerRef} className={`map ${mainView === 'map' ? '' : 'map-hidden'}`} />
+
+          {mainView === 'trips' && (
+            <div className="detail-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Trip Logs</h3>
+                  <p>Log origin, layovers, and destination to estimate flight miles.</p>
+                </div>
+                <button
+                  type="button"
+                  className="accent-button"
+                  disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+                  onClick={() => setShowTripForm((prev) => !prev)}
+                >
+                  {showTripForm ? 'Close form' : 'Add trip'}
+                </button>
+              </div>
+
+              {showTripForm && (
+                <div className="trip-form">
+                  <datalist id="airport-options-origin">
+                    {airportAutocomplete(tripForm.origin_query).map((airport) => (
+                      <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
+                    ))}
+                  </datalist>
+                  <datalist id="airport-options-destination">
+                    {airportAutocomplete(tripForm.destination_query).map((airport) => (
+                      <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
+                    ))}
+                  </datalist>
+                  {tripForm.layover_queries.map((query, index) => (
+                    <datalist id={`airport-options-layover-${index}`} key={`airport-options-${index}`}>
+                      {airportAutocomplete(query).map((airport) => (
+                        <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
+                      ))}
+                    </datalist>
+                  ))}
+
+                  <label>
+                    Date (optional)
+                    <input
+                      type="date"
+                      value={tripForm.flown_on}
+                      onChange={(event) => setTripForm((prev) => ({ ...prev, flown_on: event.target.value }))}
+                    />
+                  </label>
+
+                  <label>
+                    Origin
+                    <input
+                      type="text"
+                      list="airport-options-origin"
+                      placeholder="Type code, airport name, or city/state"
+                      value={tripForm.origin_query}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setTripForm((prev) => ({
+                          ...prev,
+                          origin_query: value,
+                          origin_place_id: resolveAirportId(value),
+                        }));
+                      }}
+                    />
+                  </label>
+
+                  <label>
+                    Destination
+                    <input
+                      type="text"
+                      list="airport-options-destination"
+                      placeholder="Type code, airport name, or city/state"
+                      value={tripForm.destination_query}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setTripForm((prev) => ({
+                          ...prev,
+                          destination_query: value,
+                          destination_place_id: resolveAirportId(value),
+                        }));
+                      }}
+                    />
+                  </label>
+
+                  {tripForm.layovers.map((layoverId, index) => (
+                    <label key={`layover-${index}`}>
+                      Layover {index + 1} (optional)
+                      <div className="layover-row">
+                        <input
+                          type="text"
+                          list={`airport-options-layover-${index}`}
+                          placeholder="Type code, airport name, or city/state"
+                          value={tripForm.layover_queries[index]}
+                          onChange={(event) =>
+                            setTripForm((prev) => ({
+                              ...prev,
+                              layovers: prev.layovers.map((item, itemIndex) =>
+                                itemIndex === index ? resolveAirportId(event.target.value) : item,
+                              ),
+                              layover_queries: prev.layover_queries.map((item, itemIndex) =>
+                                itemIndex === index ? event.target.value : item,
+                              ),
+                            }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTripForm((prev) => ({
+                              ...prev,
+                              layovers: prev.layovers.filter((_, itemIndex) => itemIndex !== index),
+                              layover_queries: prev.layover_queries.filter(
+                                (_, itemIndex) => itemIndex !== index,
+                              ),
+                            }))
+                          }
+                          disabled={tripForm.layovers.length <= 1}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </label>
+                  ))}
+
+                  <div className="trip-form-actions">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTripForm((prev) => ({
+                          ...prev,
+                          layovers: [...prev.layovers, ''],
+                          layover_queries: [...prev.layover_queries, ''],
+                        }))
+                      }
+                    >
+                      Add layover
+                    </button>
+                    <button type="button" className="accent-button" onClick={handleCreateTripLog}>
+                      Save trip log
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <ul className="trip-list">
+                {tripLogs.map((trip) => (
+                  <li key={trip.id} className="trip-card">
+                    <div className="trip-main">
+                      <strong>{trip.route_points.map((point) => point.name).join(' -> ')}</strong>
+                      <span>{Math.round(trip.estimated_miles).toLocaleString()} mi estimated</span>
+                      <small>{trip.flown_on ? `Date: ${trip.flown_on}` : 'Date not provided'}</small>
+                    </div>
+                    {typeof profileId === 'number' && canEditSelectedProfile && (
+                      <button type="button" onClick={() => handleDeleteTripLog(trip.id)}>
+                        Delete
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {mainView === 'stats' && (
+            <div className="detail-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Detailed Stats</h3>
+                  <p>Flight mileage and place-visit depth in one view.</p>
+                </div>
+              </div>
+
+              <div className="stats-grid">
+                <div className="stat-card hemisphere-card">
+                  <span>Hemisphere Coverage</span>
+                  <div className="hemisphere-wheel-wrap">
+                    <span className="hemi-label hemi-n">N</span>
+                    <span className="hemi-label hemi-e">E</span>
+                    <span className="hemi-label hemi-s">S</span>
+                    <span className="hemi-label hemi-w">W</span>
+                    <div
+                      className="hemisphere-wheel"
+                      style={
+                        {
+                          '--north': `${hemispherePercents.northCombined}%`,
+                          '--east': `${hemispherePercents.eastCombined}%`,
+                          '--south': `${hemispherePercents.southCombined}%`,
+                          '--west': `${Math.max(
+                            0,
+                            100 -
+                              hemispherePercents.northCombined -
+                              hemispherePercents.eastCombined -
+                              hemispherePercents.southCombined,
+                          )}%`,
+                        } as CSSProperties
+                      }
+                    />
+                  </div>
+                  <small>
+                    N {stats?.hemispheres.north ?? 0} | S {stats?.hemispheres.south ?? 0} | E{' '}
+                    {stats?.hemispheres.east ?? 0} | W {stats?.hemispheres.west ?? 0}
+                  </small>
+                  <small>
+                    NE {stats?.hemispheres.quadrants.ne ?? 0} | NW {stats?.hemispheres.quadrants.nw ?? 0} | SE{' '}
+                    {stats?.hemispheres.quadrants.se ?? 0} | SW {stats?.hemispheres.quadrants.sw ?? 0}
+                  </small>
+                  <small>
+                    N/S overlap {stats?.hemispheres.overlap.north_south ? 'Yes' : 'No'} | E/W overlap{' '}
+                    {stats?.hemispheres.overlap.east_west ? 'Yes' : 'No'} | 4 quadrants{' '}
+                    {stats?.hemispheres.overlap.all_four_quadrants ? 'Yes' : 'No'}
+                  </small>
+                </div>
+                <div className="stat-card">
+                  <span>Estimated Miles Flown</span>
+                  <strong>{Math.round(stats?.trip_logs.estimated_miles ?? 0).toLocaleString()}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Trips Logged</span>
+                  <strong>{stats?.trip_logs.count ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Flight Legs</span>
+                  <strong>{stats?.trip_logs.flight_legs ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Avg Miles / Trip</span>
+                  <strong>{Math.round(stats?.trip_logs.average_miles_per_trip ?? 0).toLocaleString()}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Countries Visited</span>
+                  <strong>
+                    {stats?.countries.visited ?? 0} / {stats?.countries.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Continents Visited</span>
+                  <strong>
+                    {stats?.continents.visited ?? 0} / {stats?.continents.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>States / Regions</span>
+                  <strong>
+                    {stats?.states.visited ?? 0} / {stats?.states.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Cities Visited</span>
+                  <strong>
+                    {stats?.cities.visited ?? 0} / {stats?.cities.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Airports Visited</span>
+                  <strong>
+                    {stats?.airports.visited ?? 0} / {stats?.airports.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Sites Visited</span>
+                  <strong>
+                    {stats?.sites.visited ?? 0} / {stats?.sites.total ?? 0}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Distance (km)</span>
+                  <strong>{Math.round(stats?.travel.distance_km ?? 0).toLocaleString()}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Timezones Visited</span>
+                  <strong>{stats?.travel.timezones_visited ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Currencies Used</span>
+                  <strong>{stats?.travel.currencies_used ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Longest Travel Streak</span>
+                  <strong>{stats?.travel.longest_trip_streak_days ?? 0} days</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Repeated Airports</span>
+                  <strong>{stats?.travel.repeated_airports ?? 0}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Farthest North</span>
+                  <strong>{stats?.geo_extremes.farthest_north?.name ?? 'N/A'}</strong>
+                  <small>{stats?.geo_extremes.farthest_north?.lat ?? 'N/A'}°</small>
+                </div>
+                <div className="stat-card">
+                  <span>Farthest South</span>
+                  <strong>{stats?.geo_extremes.farthest_south?.name ?? 'N/A'}</strong>
+                  <small>{stats?.geo_extremes.farthest_south?.lat ?? 'N/A'}°</small>
+                </div>
+                <div className="stat-card">
+                  <span>Highest Elevation</span>
+                  <strong>{stats?.geo_extremes.highest_elevation?.name ?? 'N/A'}</strong>
+                  <small>{Math.round(stats?.geo_extremes.highest_elevation?.elevation_m ?? 0)} m</small>
+                </div>
+                {Object.entries(stats?.site_categories ?? {}).map(([category, values]) => (
+                  <div className="stat-card" key={category}>
+                    <span>{category.replaceAll('_', ' ')}</span>
+                    <strong>
+                      {values.visited} / {values.total}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {mainView === 'achievements' && (
+            <div className="detail-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Achievements</h3>
+                  <p>Badges and milestone tracking are not wired yet.</p>
+                </div>
+              </div>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span>Explorer Rank</span>
+                  <strong>Coming soon</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Milestones</span>
+                  <strong>Pending</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {mainView === 'leaderboard' && (
+            <div className="detail-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Leaderboard</h3>
+                  <p>Shared profile ranking and comparison are planned next.</p>
+                </div>
+              </div>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span>Your position</span>
+                  <strong>{selectedProfile ? 'TBD' : '--'}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Public profiles</span>
+                  <strong>{publicProfiles.length}</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
+
+      {showSettingsOverlay && (
+        <div className="first-run-modal settings-modal">
+          <div className="first-run-card settings-card">
+            <h2>Settings</h2>
+            <p>Account, application, and server configuration.</p>
+            <div className="trip-form">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={themeMode === 'light'}
+                  onChange={(event) => setThemeMode(event.target.checked ? 'light' : 'dark')}
+                />
+                Use light theme
+              </label>
+            </div>
+            {!authSession?.authenticated && authSession?.has_local_users && !authSession?.oidc_enabled && (
+              <div className="trip-form">
+                <p>Log in with a local account to edit profiles and visits.</p>
+                <button
+                  type="button"
+                  className="accent-button"
+                  onClick={() => {
+                    setShowSettingsOverlay(false);
+                    setShowLoginModal(true);
+                  }}
+                >
+                  Open login
+                </button>
+              </div>
+            )}
+            {isAdmin && (
+              <>
+                <div className="trip-form">
+                  <h3>Application Administration</h3>
+                  <p>Admin tools for users, profiles, auth, and database configuration.</p>
+                </div>
+
+                <div className="trip-form">
+                  <h3>User management</h3>
+                  <label>
+                    Username
+                    <input value={newAdminUserUsername} onChange={(event) => setNewAdminUserUsername(event.target.value)} />
+                  </label>
+                  <label>
+                    Display name
+                    <input value={newAdminUserDisplayName} onChange={(event) => setNewAdminUserDisplayName(event.target.value)} />
+                  </label>
+                  <label>
+                    Password
+                    <input type="password" value={newAdminUserPassword} onChange={(event) => setNewAdminUserPassword(event.target.value)} />
+                  </label>
+                  <label className="toggle">
+                    <input type="checkbox" checked={newAdminUserIsAdmin} onChange={(event) => setNewAdminUserIsAdmin(event.target.checked)} />
+                    Create as admin
+                  </label>
+                  <button type="button" className="accent-button" onClick={handleAdminCreateUser}>
+                    Add user
+                  </button>
+                  <ul className="trip-list">
+                    {adminUsers.map((user) => (
+                      <li key={user.id} className="trip-card admin-card">
+                        <div className="trip-main">
+                          <strong>{user.display_name || user.username || `User ${user.id}`}</strong>
+                          <span>@{user.username || 'n/a'} · {user.role}</span>
+                        </div>
+                        <div className="admin-actions">
+                          <button type="button" onClick={() => handleAdminUserRole(user.id, user.is_admin ? 'user' : 'admin')}>
+                            {user.is_admin ? 'Demote' : 'Promote'}
+                          </button>
+                          <input
+                            type="password"
+                            placeholder="New password"
+                            value={adminPasswordReset[user.id] ?? ''}
+                            onChange={(event) =>
+                              setAdminPasswordReset((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            }
+                          />
+                          <button type="button" onClick={() => handleAdminResetPassword(user.id)}>
+                            Reset password
+                          </button>
+                          <button type="button" onClick={() => handleAdminDeleteUser(user.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="trip-form">
+                  <h3>Global profile management</h3>
+                  <label>
+                    Profile name
+                    <input value={newAdminProfileName} onChange={(event) => setNewAdminProfileName(event.target.value)} />
+                  </label>
+                  <label>
+                    Owner
+                    <select value={newAdminProfileOwnerId} onChange={(event) => setNewAdminProfileOwnerId(event.target.value)}>
+                      <option value="">Select user</option>
+                      {adminUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.display_name || user.username || `User ${user.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Color
+                    <input type="color" value={newAdminProfileColor} onChange={(event) => setNewAdminProfileColor(event.target.value)} />
+                  </label>
+                  <label className="toggle">
+                    <input type="checkbox" checked={newAdminProfilePublic} onChange={(event) => setNewAdminProfilePublic(event.target.checked)} />
+                    Public profile
+                  </label>
+                  <button type="button" className="accent-button" onClick={handleAdminCreateProfile}>
+                    Create server profile
+                  </button>
+                  <ul className="trip-list">
+                    {adminProfiles.map((profile) => (
+                      <li key={profile.id} className="trip-card admin-card">
+                        <div className="trip-main">
+                          <strong>{profile.name}</strong>
+                          <span>{profile.owner_label || 'Unknown owner'}</span>
+                        </div>
+                        <div className="admin-actions">
+                          <button type="button" onClick={() => handleAdminEditProfile(profile)}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => handleAdminToggleProfilePublic(profile)}>
+                            {profile.is_public ? 'Make private' : 'Make public'}
+                          </button>
+                          <button type="button" onClick={() => handleAdminDeleteProfile(profile.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {adminSettings && (
+                  <>
+                    <div className="trip-form">
+                      <h3>Authentication settings</h3>
+                      <label>
+                        Mode
+                        <select
+                          value={adminSettings.auth_mode}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, auth_mode: event.target.value } : prev))}
+                        >
+                          <option value="local">Username / password</option>
+                          <option value="oidc">OIDC</option>
+                        </select>
+                      </label>
+                      <label>
+                        OIDC issuer
+                        <input
+                          value={adminSettings.oidc_issuer ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_issuer: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        OIDC client id
+                        <input
+                          value={adminSettings.oidc_client_id ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_client_id: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        OIDC client secret
+                        <input
+                          type="password"
+                          value={adminSettings.oidc_client_secret ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_client_secret: event.target.value } : prev))}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="trip-form">
+                      <h3>Database settings</h3>
+                      <label>
+                        Backend
+                        <select
+                          value={adminSettings.preferred_db_backend}
+                          onChange={(event) =>
+                            setAdminSettings((prev) =>
+                              prev ? { ...prev, preferred_db_backend: event.target.value as 'sqlite' | 'postgres' } : prev,
+                            )
+                          }
+                        >
+                          <option value="sqlite">SQLite</option>
+                          <option value="postgres">Postgres</option>
+                        </select>
+                      </label>
+                      <label>
+                        SQLite path
+                        <input
+                          value={adminSettings.sqlite_db_path ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, sqlite_db_path: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        DB host
+                        <input
+                          value={adminSettings.db_host ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_host: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        DB port
+                        <input
+                          value={adminSettings.db_port ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_port: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        DB name
+                        <input
+                          value={adminSettings.db_name ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_name: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        DB user
+                        <input
+                          value={adminSettings.db_user ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_user: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label>
+                        DB password
+                        <input
+                          type="password"
+                          value={adminSettings.db_password ?? ''}
+                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_password: event.target.value } : prev))}
+                        />
+                      </label>
+                      <small>Current backend: {adminSettings.configured_db_backend}. Saving these values marks restart required.</small>
+                    </div>
+
+                    <button type="button" className="accent-button" onClick={handleAdminSaveSettings}>
+                      Save admin settings
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+            <button type="button" onClick={() => setShowSettingsOverlay(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

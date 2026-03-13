@@ -1,13 +1,218 @@
 [
-  {"id": "site-statue-liberty", "name": "Statue of Liberty", "country_code": "USA", "lat": 40.6892, "lon": -74.0445},
-  {"id": "site-niagara", "name": "Niagara Falls", "country_code": "CAN", "lat": 43.0962, "lon": -79.0377},
-  {"id": "site-chichen-itza", "name": "Chichen Itza", "country_code": "MEX", "lat": 20.6843, "lon": -88.5678},
-  {"id": "site-christ", "name": "Christ the Redeemer", "country_code": "BRA", "lat": -22.9519, "lon": -43.2105},
-  {"id": "site-stonehenge", "name": "Stonehenge", "country_code": "GBR", "lat": 51.1789, "lon": -1.8262},
-  {"id": "site-mont-saint-michel", "name": "Mont-Saint-Michel", "country_code": "FRA", "lat": 48.6361, "lon": -1.5115},
-  {"id": "site-taj-mahal", "name": "Taj Mahal", "country_code": "IND", "lat": 27.1751, "lon": 78.0421},
-  {"id": "site-great-wall", "name": "Great Wall at Badaling", "country_code": "CHN", "lat": 40.3652, "lon": 116.0204},
-  {"id": "site-fuji", "name": "Mount Fuji", "country_code": "JPN", "lat": 35.3606, "lon": 138.7274},
-  {"id": "site-sydney-opera", "name": "Sydney Opera House", "country_code": "AUS", "lat": -33.8568, "lon": 151.2153},
-  {"id": "site-table-mountain", "name": "Table Mountain", "country_code": "ZAF", "lat": -33.9628, "lon": 18.4098}
+  {
+    "id": "site-drink-guinness-storehouse",
+    "name": "Guinness Storehouse",
+    "country_code": "IRL",
+    "lat": 53.3419,
+    "lon": -6.2869,
+    "category": "brewery_winery_distillery",
+    "source": "curated"
+  },
+  {
+    "id": "site-drink-napa-valley",
+    "name": "Napa Valley",
+    "country_code": "USA",
+    "lat": 38.5025,
+    "lon": -122.2654,
+    "category": "brewery_winery_distillery",
+    "source": "curated"
+  },
+  {
+    "id": "site-chichen-itza",
+    "name": "Chichen Itza",
+    "country_code": "MEX",
+    "lat": 20.6843,
+    "lon": -88.5678,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-christ",
+    "name": "Christ the Redeemer",
+    "country_code": "BRA",
+    "lat": -22.9519,
+    "lon": -43.2105,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-great-wall",
+    "name": "Great Wall at Badaling",
+    "country_code": "CHN",
+    "lat": 40.3652,
+    "lon": 116.0204,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-mont-saint-michel",
+    "name": "Mont-Saint-Michel",
+    "country_code": "FRA",
+    "lat": 48.6361,
+    "lon": -1.5115,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-fuji",
+    "name": "Mount Fuji",
+    "country_code": "JPN",
+    "lat": 35.3606,
+    "lon": 138.7274,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-niagara",
+    "name": "Niagara Falls",
+    "country_code": "CAN",
+    "lat": 43.0962,
+    "lon": -79.0377,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-statue-liberty",
+    "name": "Statue of Liberty",
+    "country_code": "USA",
+    "lat": 40.6892,
+    "lon": -74.0445,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-stonehenge",
+    "name": "Stonehenge",
+    "country_code": "GBR",
+    "lat": 51.1789,
+    "lon": -1.8262,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-sydney-opera",
+    "name": "Sydney Opera House",
+    "country_code": "AUS",
+    "lat": -33.8568,
+    "lon": 151.2153,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-table-mountain",
+    "name": "Table Mountain",
+    "country_code": "ZAF",
+    "lat": -33.9628,
+    "lon": 18.4098,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-taj-mahal",
+    "name": "Taj Mahal",
+    "country_code": "IND",
+    "lat": 27.1751,
+    "lon": 78.0421,
+    "category": "heritage_unesco",
+    "source": "starter"
+  },
+  {
+    "id": "site-michelin-osteria-francescana",
+    "name": "Osteria Francescana",
+    "country_code": "ITA",
+    "lat": 44.6452,
+    "lon": 10.9252,
+    "category": "michelin_starred",
+    "source": "curated"
+  },
+  {
+    "id": "site-michelin-french-laundry",
+    "name": "The French Laundry",
+    "country_code": "USA",
+    "lat": 38.4043,
+    "lon": -122.3647,
+    "category": "michelin_starred",
+    "source": "curated"
+  },
+  {
+    "id": "site-protected-banff",
+    "name": "Banff National Park",
+    "country_code": "CAN",
+    "lat": 51.4968,
+    "lon": -115.9281,
+    "category": "protected_area",
+    "source": "curated"
+  },
+  {
+    "id": "site-protected-serengeti",
+    "name": "Serengeti National Park",
+    "country_code": "TZA",
+    "lat": -2.3333,
+    "lon": 34.8333,
+    "category": "protected_area",
+    "source": "curated"
+  },
+  {
+    "id": "site-protected-yellowstone",
+    "name": "Yellowstone National Park",
+    "country_code": "USA",
+    "lat": 44.428,
+    "lon": -110.5885,
+    "category": "protected_area",
+    "source": "curated"
+  },
+  {
+    "id": "site-wonder-giza",
+    "name": "Great Pyramid of Giza",
+    "country_code": "EGY",
+    "lat": 29.9792,
+    "lon": 31.1342,
+    "category": "wonder_ancient",
+    "source": "curated"
+  },
+  {
+    "id": "site-wonder-machu-picchu",
+    "name": "Machu Picchu",
+    "country_code": "PER",
+    "lat": -13.1631,
+    "lon": -72.545,
+    "category": "wonder_modern",
+    "source": "curated"
+  },
+  {
+    "id": "site-wonder-petra",
+    "name": "Petra",
+    "country_code": "JOR",
+    "lat": 30.3285,
+    "lon": 35.4444,
+    "category": "wonder_modern",
+    "source": "curated"
+  },
+  {
+    "id": "site-wonder-victoria-falls",
+    "name": "Victoria Falls",
+    "country_code": "ZWE",
+    "lat": -17.9243,
+    "lon": 25.8572,
+    "category": "wonder_natural",
+    "source": "curated"
+  },
+  {
+    "id": "site-50best-central",
+    "name": "Central",
+    "country_code": "PER",
+    "lat": -12.132,
+    "lon": -77.0308,
+    "category": "worlds_50_best_restaurant",
+    "source": "curated"
+  },
+  {
+    "id": "site-50best-disfrutar",
+    "name": "Disfrutar",
+    "country_code": "ESP",
+    "lat": 41.392,
+    "lon": 2.1528,
+    "category": "worlds_50_best_restaurant",
+    "source": "curated"
+  }
 ]
