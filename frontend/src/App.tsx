@@ -155,6 +155,11 @@ type MapFeatureCollection = {
   }>;
 };
 
+const emptyFeatureCollection = (): MapFeatureCollection => ({
+  type: 'FeatureCollection',
+  features: [],
+});
+
 const tabs: { type: PlaceType; label: string; helper: string }[] = [
   { type: 'country', label: 'Countries', helper: 'Track country coverage.' },
   { type: 'state', label: 'States / Regions', helper: 'Filter by visited countries.' },
@@ -207,6 +212,13 @@ const baseStyle = {
   },
   layers: [
     {
+      id: 'background',
+      type: 'background',
+      paint: {
+        'background-color': '#7fb3d5',
+      },
+    },
+    {
       id: 'osm',
       type: 'raster',
       source: 'osm',
@@ -220,6 +232,7 @@ type ThemeMode = 'dark' | 'light';
 const mapThemeTokens: Record<
   ThemeMode,
   {
+    background: string;
     countryDefault: string;
     countryOutline: string;
     clusterColor: string;
@@ -235,8 +248,9 @@ const mapThemeTokens: Record<
   }
 > = {
   dark: {
-    countryDefault: '#334155',
-    countryOutline: '#0f172a',
+    background: '#0f2740',
+    countryDefault: '#5b7088',
+    countryOutline: '#dbeafe',
     clusterColor: '#38bdf8',
     stroke: '#0f172a',
     city: '#38bdf8',
@@ -249,8 +263,9 @@ const mapThemeTokens: Record<
     rasterBrightnessMax: 0.72,
   },
   light: {
-    countryDefault: '#cbd5e1',
-    countryOutline: '#94a3b8',
+    background: '#b9d6ea',
+    countryDefault: '#d7dee8',
+    countryOutline: '#475569',
     clusterColor: '#0369a1',
     stroke: '#f8fafc',
     city: '#0ea5e9',
@@ -281,6 +296,7 @@ function App() {
 
   const [isMapReady, setIsMapReady] = useState(false);
   const [uiError, setUiError] = useState<string | null>(null);
+  const [mapStatus, setMapStatus] = useState('Map idle');
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -637,26 +653,52 @@ function App() {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: baseStyle as any,
-      center: [10, 25],
-      zoom: 1.4,
-      maxZoom: 7,
-      minZoom: 1,
-    });
+    setMapStatus('Creating map');
+    let map: MapLibreMap;
+    try {
+      map = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style: baseStyle as any,
+        center: [10, 25],
+        zoom: 1.4,
+        maxZoom: 7,
+        minZoom: 1,
+      });
+    } catch (error) {
+      setMapStatus('Map constructor failed');
+      setUiError('Map failed to initialize.');
+      console.error(error);
+      return;
+    }
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
-    map.on('load', async () => {
+    let didInitLayers = false;
+
+    const initMapLayers = async () => {
+      if (didInitLayers) return;
+      didInitLayers = true;
+      setMapStatus('Style ready, loading overlays');
       try {
         const theme = mapThemeTokens[themeMode];
-        const [countryGeo, stateGeo] = await Promise.all([
+        const [countryResult, stateResult] = await Promise.allSettled([
           api<MapFeatureCollection>('/api/places/geojson?type=country'),
           api<MapFeatureCollection>('/api/places/geojson?type=state'),
         ]);
+
+        if (countryResult.status !== 'fulfilled') {
+          throw countryResult.reason;
+        }
+
+        const countryGeo = countryResult.value;
+        const stateGeo = stateResult.status === 'fulfilled' ? stateResult.value : emptyFeatureCollection();
         countryGeoRef.current = countryGeo;
         stateGeoRef.current = stateGeo;
+
+        if (stateResult.status !== 'fulfilled') {
+          console.error('State layer failed to load.', stateResult.reason);
+          setUiError((current) => current ?? 'State overlays could not be loaded.');
+        }
 
         map.addSource('countries', { type: 'geojson', data: countryGeo as any });
         map.addLayer({
@@ -665,14 +707,14 @@ function App() {
           source: 'countries',
           paint: {
             'fill-color': ['coalesce', ['get', 'visit_color'], theme.countryDefault],
-            'fill-opacity': ['case', ['boolean', ['get', 'visited'], false], 0.55, 0.15],
+            'fill-opacity': ['case', ['boolean', ['get', 'visited'], false], 0.68, 0.36],
           },
         });
         map.addLayer({
           id: 'country-outline',
           type: 'line',
           source: 'countries',
-          paint: { 'line-color': theme.countryOutline, 'line-width': 1 },
+          paint: { 'line-color': theme.countryOutline, 'line-width': 1.2 },
         });
         map.addSource('trip-routes', {
           type: 'geojson',
@@ -765,18 +807,41 @@ function App() {
         });
 
         setIsMapReady(true);
+        setMapStatus(`Map ready: countries=${countryGeo.features.length}, states=${stateGeo.features.length}`);
+        window.setTimeout(() => map.resize(), 0);
       } catch (error) {
+        didInitLayers = false;
+        setMapStatus('Overlay load failed');
         setUiError('Map layers failed to load.');
         console.error(error);
       }
+    };
+
+    map.on('styledata', () => {
+      setMapStatus(`Style data event: loaded=${String(map.isStyleLoaded())}`);
     });
+
+    map.on('load', () => {
+      setMapStatus('Map loaded, loading overlays');
+      void initMapLayers();
+    });
+
+    map.on('error', (event) => {
+      setMapStatus(`Map error: ${event.error?.message ?? 'unknown error'}`);
+      console.error('MapLibre error', event.error);
+    });
+
+    if (map.loaded()) {
+      setMapStatus('Map already loaded, loading overlays');
+      void initMapLayers();
+    }
 
     mapRef.current = map;
     return () => {
       mapRef.current = null;
       map.remove();
     };
-  }, []);
+  }, [authLoading]);
 
   useEffect(() => {
     if (mainView !== 'map') return;
@@ -790,6 +855,7 @@ function App() {
     const map = mapRef.current;
     if (!map || !isMapReady) return;
     const theme = mapThemeTokens[themeMode];
+    map.setPaintProperty('background', 'background-color', theme.background);
     map.setPaintProperty('country-fill', 'fill-color', ['coalesce', ['get', 'visit_color'], theme.countryDefault]);
     map.setPaintProperty('country-outline', 'line-color', theme.countryOutline);
     map.setPaintProperty('clusters', 'circle-color', theme.clusterColor);
@@ -828,6 +894,7 @@ function App() {
     const routeSource = map.getSource('trip-routes') as maplibregl.GeoJSONSource | undefined;
     const visitedStatesSource = map.getSource('visited-states') as maplibregl.GeoJSONSource | undefined;
     if (!countrySource || !pointSource || !routeSource || !visitedStatesSource || !countryGeoRef.current || !stateGeoRef.current) {
+      setMapStatus('Overlay sync skipped: map sources not ready');
       return;
     }
 
@@ -952,6 +1019,9 @@ function App() {
 
     routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
     map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
+    setMapStatus(
+      `Overlay sync: profile=${String(profileId)} visits=${activeVisits.length} countries=${countryColorById.size} points=${pointFeatures.length} states=${stateFeatures.length} routes=${routeFeatures.length}`,
+    );
   }, [places, visits, tripLogs, profileId, profileColorById, isMapReady, showTripRoutes, themeMode]);
 
   const activeFilteredPlaces = useMemo(() => {
@@ -1999,6 +2069,8 @@ function App() {
               </label>
             </div>
           )}
+
+          {mainView === 'map' && <div className="map-debug">{mapStatus}</div>}
 
           <div ref={mapContainerRef} className={`map ${mainView === 'map' ? '' : 'map-hidden'}`} />
 

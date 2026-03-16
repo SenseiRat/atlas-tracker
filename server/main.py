@@ -442,6 +442,12 @@ def as_float(value: Any) -> Optional[float]:
         return None
 
 
+def is_polygonal_geometry(geometry: Any) -> bool:
+    if not isinstance(geometry, dict):
+        return False
+    return str(geometry.get("type") or "").strip() in {"Polygon", "MultiPolygon"}
+
+
 def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[str]:
     code = str(raw or "").strip().upper()
     if not code:
@@ -453,6 +459,12 @@ def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[s
 
 def extract_state_code(item: Dict[str, Any]) -> Optional[str]:
     state_code = item.get("state_code") or item.get("admin1_code") or item.get("state")
+    if not state_code and item.get("iso_3166_2"):
+        region = str(item.get("iso_3166_2"))
+        if "-" in region:
+            state_code = region.split("-", 1)[1]
+        else:
+            state_code = region
     if not state_code and item.get("iso_region"):
         region = str(item.get("iso_region"))
         if "-" in region:
@@ -650,12 +662,16 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
     for feature in state_regions_geojson.get("features", []):
         props = feature.get("properties", {})
         country_code = normalize_country_code(
-            props.get("country_code") or props.get("iso_country") or props.get("ISO_A2") or props.get("COUNTRY_CODE"),
+            props.get("country_code")
+            or props.get("iso_country")
+            or props.get("ISO_A2")
+            or props.get("COUNTRY_CODE")
+            or props.get("iso_a2"),
             iso2_to_iso3,
         )
         state_code = extract_state_code(props)
         geometry = feature.get("geometry")
-        if not country_code or not state_code or not geometry:
+        if not country_code or not state_code or not is_polygonal_geometry(geometry):
             continue
         state_geometry_by_key[(country_code, state_code)] = {
             "geometry": geometry,
