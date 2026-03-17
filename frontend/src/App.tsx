@@ -19,6 +19,13 @@ type Place = {
   category?: string;
 };
 
+type PlacesResponse = {
+  items: Place[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 type Visit = {
   profile_id: number;
   place_id: string;
@@ -708,6 +715,7 @@ function App() {
   const [newAdminProfileColor, setNewAdminProfileColor] = useState(defaultProfileColor);
   const [newAdminProfilePublic, setNewAdminProfilePublic] = useState(false);
   const [adminPasswordReset, setAdminPasswordReset] = useState<Record<number, string>>({});
+  const [adminUserEdits, setAdminUserEdits] = useState<Record<number, { username: string; display_name: string }>>({});
   const [mainView, setMainView] = useState<MainView>('map');
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     const stored = localStorage.getItem('tracker-theme');
@@ -747,6 +755,10 @@ function App() {
   const [selectedProfileColor, setSelectedProfileColor] = useState(defaultProfileColor);
   const [selectedProfilePublic, setSelectedProfilePublic] = useState(false);
   const [showFirstProfilePrompt, setShowFirstProfilePrompt] = useState(false);
+  const [accountUsername, setAccountUsername] = useState('');
+  const [accountDisplayName, setAccountDisplayName] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountConfirmPassword, setAccountConfirmPassword] = useState('');
   const [search, setSearch] = useState<Record<PlaceType, string>>({
     country: '',
     state: '',
@@ -800,6 +812,35 @@ function App() {
     setSelectedProfileColor(normalizeHexColor(active?.color));
     setSelectedProfilePublic(Boolean(active?.is_public));
   }, [profiles, profileId]);
+
+  useEffect(() => {
+    const nextUsers = Object.fromEntries(
+      adminUsers.map((user) => [
+        user.id,
+        {
+          username: user.username ?? '',
+          display_name: user.display_name ?? '',
+        },
+      ]),
+    );
+    setAdminUserEdits(nextUsers);
+  }, [adminUsers]);
+
+  useEffect(() => {
+    setAccountUsername(authSession?.user?.username ?? '');
+    setAccountDisplayName(authSession?.user?.display_name ?? '');
+    setAccountPassword('');
+    setAccountConfirmPassword('');
+  }, [authSession?.user?.id, authSession?.user?.username, authSession?.user?.display_name]);
+
+  useEffect(() => {
+    if (!showSettingsOverlay) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showSettingsOverlay]);
 
   const airportOptions = useMemo(() => {
     return [...places.airport]
@@ -1056,21 +1097,38 @@ function App() {
   useEffect(() => {
     if (!canLoadAppData) return;
     let isCancelled = false;
+    const loadAllPlaces = async (tab: (typeof tabs)[number]): Promise<Place[]> => {
+      const airportParam = tab.type === 'airport' ? '&major_only=true' : '';
+      const pageSizeByType: Record<PlaceType, number> = {
+        country: 500,
+        state: 10000,
+        city: 10000,
+        airport: 5000,
+        site: 3000,
+      };
+      const pageSize = pageSizeByType[tab.type];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+      const allItems: Place[] = [];
+
+      while (offset < total) {
+        const response = await api<PlacesResponse>(
+          `/api/places?type=${tab.type}&limit=${pageSize}&offset=${offset}${airportParam}`,
+        );
+        allItems.push(...response.items);
+        total = response.total;
+        if (response.items.length === 0) break;
+        offset += response.items.length;
+      }
+
+      return allItems;
+    };
+
     tabs.forEach(async (tab) => {
       try {
-        const airportParam = tab.type === 'airport' ? '&major_only=true' : '';
-        const limitByType: Record<PlaceType, number> = {
-          country: 400,
-          state: 10000,
-          city: 12000,
-          airport: 10000,
-          site: 3000,
-        };
-        const response = await api<{ items: Place[] }>(
-          `/api/places?type=${tab.type}&limit=${limitByType[tab.type]}${airportParam}`,
-        );
+        const items = await loadAllPlaces(tab);
         if (isCancelled) return;
-        setPlaces((prev) => ({ ...prev, [tab.type]: response.items }));
+        setPlaces((prev) => ({ ...prev, [tab.type]: items }));
       } catch {
         if (isCancelled) return;
         setUiError(`Unable to load ${tab.label.toLowerCase()}.`);
@@ -1623,6 +1681,13 @@ function App() {
     });
   };
 
+  const openCreateProfileModal = () => {
+    setNewProfileName('');
+    setNewProfilePublic(false);
+    setNewProfileColor(nextSuggestedProfileColor);
+    setShowCreateProfileModal(true);
+  };
+
   const onToggleVisit = async (place: Place) => {
     if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
     try {
@@ -1848,6 +1913,23 @@ function App() {
     await refreshAuthSession();
   };
 
+  const handleAdminSaveUser = async (userId: number) => {
+    const draft = adminUserEdits[userId];
+    if (!draft) return;
+    await api(`/api/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: draft.username,
+        display_name: draft.display_name,
+      }),
+    });
+    await refreshAdminData();
+    if (authSession?.user?.id === userId) {
+      await refreshAuthSession();
+    }
+  };
+
   const handleAdminDeleteUser = async (userId: number) => {
     if (!window.confirm('Delete this user and all of their profiles?')) return;
     await api(`/api/admin/users/${userId}`, { method: 'DELETE' });
@@ -1928,6 +2010,50 @@ function App() {
       body: JSON.stringify(adminSettings),
     });
     setAdminSettings(updated);
+  };
+
+  const handleAccountSave = async () => {
+    if (!authSession?.authenticated || isAuthSubmitting) return;
+    const displayName = accountDisplayName.trim();
+    if (!displayName) {
+      setUiError('Display name is required.');
+      return;
+    }
+    if (accountPassword && accountPassword !== accountConfirmPassword) {
+      setUiError('Password confirmation does not match.');
+      return;
+    }
+
+    const payload: Record<string, string> = {
+      display_name: displayName,
+    };
+    if (!authSession.oidc_enabled) {
+      payload.username = accountUsername.trim().toLowerCase();
+      if (accountPassword) {
+        payload.password = accountPassword;
+      }
+    }
+
+    setUiError(null);
+    setIsAuthSubmitting(true);
+    try {
+      await api('/api/auth/account', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setAccountPassword('');
+      setAccountConfirmPassword('');
+      await refreshAuthSession();
+      if (isAdmin) {
+        await refreshAdminData();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update account.';
+      setUiError(message);
+    } finally {
+      setIsAuthSubmitting(false);
+    }
   };
 
   const formatPlaceLabel = (place: Place, type: PlaceType) => {
@@ -2086,6 +2212,597 @@ function App() {
       setIsAuthSubmitting(false);
     }
   };
+
+  const renderSettingsBody = () => (
+    <>
+      <details className="settings-section" open>
+        <summary>
+          <div>
+            <strong>Authentication</strong>
+            <span>Sign in, review auth mode, and configure OIDC or backend settings.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          <div className="settings-note">
+            <strong>Status</strong>
+            <span>
+              {authSession?.authenticated
+                ? `Signed in as ${authSession.user?.display_name || authSession.user?.username || authSession.user?.email || 'user'}`
+                : 'Not signed in'}
+            </span>
+          </div>
+          <div className="settings-note">
+            <strong>Mode</strong>
+            <span>{authSession?.oidc_enabled ? 'OIDC' : 'Local username and password'}</span>
+          </div>
+
+          {!authSession?.authenticated && authSession?.has_local_users && !authSession?.oidc_enabled && (
+            <button
+              type="button"
+              className="accent-button"
+              onClick={() => {
+                setShowSettingsOverlay(false);
+                setShowLoginModal(true);
+              }}
+            >
+              Open login
+            </button>
+          )}
+
+          {!authSession?.authenticated && authSession?.oidc_enabled && (
+            <button
+              type="button"
+              className="accent-button"
+              onClick={() => {
+                window.location.href = '/api/auth/login';
+              }}
+            >
+              Sign in with OIDC
+            </button>
+          )}
+
+          {authSession?.authenticated && (
+            <button type="button" onClick={handleLogout}>
+              Log out
+            </button>
+          )}
+
+          {isAdmin && adminSettings && (
+            <>
+              <div className="settings-subsection">
+                <h3>OIDC configuration</h3>
+                <label>
+                  Mode
+                  <select
+                    value={adminSettings.auth_mode}
+                    onChange={(event) =>
+                      setAdminSettings((prev) => (prev ? { ...prev, auth_mode: event.target.value } : prev))
+                    }
+                  >
+                    <option value="local">Username / password</option>
+                    <option value="oidc">OIDC</option>
+                  </select>
+                </label>
+                <label>
+                  OIDC issuer
+                  <input
+                    value={adminSettings.oidc_issuer ?? ''}
+                    onChange={(event) =>
+                      setAdminSettings((prev) => (prev ? { ...prev, oidc_issuer: event.target.value } : prev))
+                    }
+                  />
+                </label>
+                <label>
+                  OIDC client id
+                  <input
+                    value={adminSettings.oidc_client_id ?? ''}
+                    onChange={(event) =>
+                      setAdminSettings((prev) => (prev ? { ...prev, oidc_client_id: event.target.value } : prev))
+                    }
+                  />
+                </label>
+                <label>
+                  OIDC client secret
+                  <input
+                    type="password"
+                    value={adminSettings.oidc_client_secret ?? ''}
+                    onChange={(event) =>
+                      setAdminSettings((prev) => (prev ? { ...prev, oidc_client_secret: event.target.value } : prev))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="settings-subsection">
+                <h3>Server backend</h3>
+                <label>
+                  Backend
+                  <select
+                    value={adminSettings.preferred_db_backend}
+                    onChange={(event) =>
+                      setAdminSettings((prev) =>
+                        prev ? { ...prev, preferred_db_backend: event.target.value as 'sqlite' | 'postgres' } : prev,
+                      )
+                    }
+                  >
+                    <option value="sqlite">SQLite</option>
+                    <option value="postgres">Postgres</option>
+                  </select>
+                </label>
+                <label>
+                  SQLite path
+                  <input
+                    value={adminSettings.sqlite_db_path ?? ''}
+                    onChange={(event) =>
+                      setAdminSettings((prev) => (prev ? { ...prev, sqlite_db_path: event.target.value } : prev))
+                    }
+                  />
+                </label>
+                <label>
+                  DB host
+                  <input
+                    value={adminSettings.db_host ?? ''}
+                    onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_host: event.target.value } : prev))}
+                  />
+                </label>
+                <label>
+                  DB port
+                  <input
+                    value={adminSettings.db_port ?? ''}
+                    onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_port: event.target.value } : prev))}
+                  />
+                </label>
+                <label>
+                  DB name
+                  <input
+                    value={adminSettings.db_name ?? ''}
+                    onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_name: event.target.value } : prev))}
+                  />
+                </label>
+                <label>
+                  DB user
+                  <input
+                    value={adminSettings.db_user ?? ''}
+                    onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_user: event.target.value } : prev))}
+                  />
+                </label>
+                <label>
+                  DB password
+                  <input
+                    type="password"
+                    value={adminSettings.db_password ?? ''}
+                    onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_password: event.target.value } : prev))}
+                  />
+                </label>
+                <small>
+                  Current backend: {adminSettings.configured_db_backend}. Saving these values marks restart required.
+                </small>
+              </div>
+
+              <button type="button" className="accent-button" onClick={handleAdminSaveSettings}>
+                Save authentication and backend settings
+              </button>
+            </>
+          )}
+        </div>
+      </details>
+
+      <details className="settings-section">
+        <summary>
+          <div>
+            <strong>Users</strong>
+            <span>Create users, rename them, update roles, and reset passwords.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          {isAdmin ? (
+            <>
+              <div className="settings-subsection">
+                <h3>Add user</h3>
+                <label>
+                  Username
+                  <input value={newAdminUserUsername} onChange={(event) => setNewAdminUserUsername(event.target.value)} />
+                </label>
+                <label>
+                  Display name
+                  <input value={newAdminUserDisplayName} onChange={(event) => setNewAdminUserDisplayName(event.target.value)} />
+                </label>
+                <label>
+                  Password
+                  <input type="password" value={newAdminUserPassword} onChange={(event) => setNewAdminUserPassword(event.target.value)} />
+                </label>
+                <label className="toggle">
+                  <input type="checkbox" checked={newAdminUserIsAdmin} onChange={(event) => setNewAdminUserIsAdmin(event.target.checked)} />
+                  Create as admin
+                </label>
+                <button type="button" className="accent-button" onClick={handleAdminCreateUser}>
+                  Add user
+                </button>
+              </div>
+
+              <ul className="trip-list">
+                {adminUsers.map((user) => (
+                  <li key={user.id} className="trip-card admin-card">
+                    <div className="trip-main">
+                      <strong>{user.display_name || user.username || `User ${user.id}`}</strong>
+                      <span>@{user.username || 'n/a'} · {user.role}</span>
+                    </div>
+                    <div className="admin-actions">
+                      <label>
+                        Username
+                        <input
+                          value={adminUserEdits[user.id]?.username ?? ''}
+                          onChange={(event) =>
+                            setAdminUserEdits((prev) => ({
+                              ...prev,
+                              [user.id]: {
+                                username: event.target.value,
+                                display_name: prev[user.id]?.display_name ?? user.display_name ?? '',
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Display name
+                        <input
+                          value={adminUserEdits[user.id]?.display_name ?? ''}
+                          onChange={(event) =>
+                            setAdminUserEdits((prev) => ({
+                              ...prev,
+                              [user.id]: {
+                                username: prev[user.id]?.username ?? user.username ?? '',
+                                display_name: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <button type="button" onClick={() => handleAdminSaveUser(user.id)}>
+                        Save details
+                      </button>
+                      <button type="button" onClick={() => handleAdminUserRole(user.id, user.is_admin ? 'user' : 'admin')}>
+                        {user.is_admin ? 'Demote' : 'Promote'}
+                      </button>
+                      <input
+                        type="password"
+                        placeholder="New password"
+                        value={adminPasswordReset[user.id] ?? ''}
+                        onChange={(event) => setAdminPasswordReset((prev) => ({ ...prev, [user.id]: event.target.value }))}
+                      />
+                      <button type="button" onClick={() => handleAdminResetPassword(user.id)}>
+                        Reset password
+                      </button>
+                      <button type="button" onClick={() => handleAdminDeleteUser(user.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>Only administrators can manage users.</p>
+          )}
+        </div>
+      </details>
+
+      <details className="settings-section">
+        <summary>
+          <div>
+            <strong>List Settings</strong>
+            <span>Manage list scopes, category filters, and visited-country filters.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          <div className="settings-grid">
+            {tabs.map((tab) => (
+              <label key={`scope-${tab.type}`}>
+                {tab.label} scope
+                <select
+                  value={listScope[tab.type]}
+                  onChange={(event) =>
+                    setListScope((prev) => ({
+                      ...prev,
+                      [tab.type]: event.target.value as ListScope,
+                    }))
+                  }
+                >
+                  <option value="all">All</option>
+                  <option value="visited">Visited</option>
+                  <option value="unvisited">Unvisited</option>
+                </select>
+              </label>
+            ))}
+
+            <label>
+              Site category
+              <select value={siteCategoryFilter} onChange={(event) => setSiteCategoryFilter(event.target.value)}>
+                {siteCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category === 'all' ? 'All categories' : category.replaceAll('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {visitedCountryScopeOptions.length > 0 && (
+            <>
+              <div className="visited-country-filter">
+                <div className="visited-country-filter__header">
+                  <span>State list country filter</span>
+                  {selectedVisitedCountries.state.length > 0 && (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedVisitedCountries((prev) => ({
+                          ...prev,
+                          state: [],
+                        }))
+                      }
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="visited-country-filter__list">
+                  {visitedCountryScopeOptions.map((country) => (
+                    <label key={`state-${country.code}`} className="visited-country-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedVisitedCountries.state.includes(country.code)}
+                        onChange={() => onToggleVisitedCountrySelection('state', country.code)}
+                      />
+                      <span>{country.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="visited-country-filter">
+                <div className="visited-country-filter__header">
+                  <span>City list country filter</span>
+                  {selectedVisitedCountries.city.length > 0 && (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedVisitedCountries((prev) => ({
+                          ...prev,
+                          city: [],
+                        }))
+                      }
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="visited-country-filter__list">
+                  {visitedCountryScopeOptions.map((country) => (
+                    <label key={`city-${country.code}`} className="visited-country-option">
+                      <input
+                        type="checkbox"
+                        checked={selectedVisitedCountries.city.includes(country.code)}
+                        onChange={() => onToggleVisitedCountrySelection('city', country.code)}
+                      />
+                      <span>{country.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </details>
+
+      <details className="settings-section">
+        <summary>
+          <div>
+            <strong>Profile</strong>
+            <span>Update your account details, display name, password, and appearance.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={themeMode === 'light'}
+              onChange={(event) => setThemeMode(event.target.checked ? 'light' : 'dark')}
+            />
+            Use light theme
+          </label>
+
+          {authSession?.authenticated ? (
+            <>
+              {!authSession.oidc_enabled && (
+                <label>
+                  Username
+                  <input value={accountUsername} onChange={(event) => setAccountUsername(event.target.value)} />
+                </label>
+              )}
+              <label>
+                Display name
+                <input value={accountDisplayName} onChange={(event) => setAccountDisplayName(event.target.value)} />
+              </label>
+              {!authSession.oidc_enabled && (
+                <>
+                  <label>
+                    New password
+                    <input type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
+                  </label>
+                  <label>
+                    Confirm password
+                    <input
+                      type="password"
+                      value={accountConfirmPassword}
+                      onChange={(event) => setAccountConfirmPassword(event.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+              <button type="button" className="accent-button" onClick={handleAccountSave} disabled={isAuthSubmitting}>
+                {isAuthSubmitting ? 'Saving...' : 'Save profile settings'}
+              </button>
+            </>
+          ) : (
+            <p>Sign in to update your account profile and password.</p>
+          )}
+        </div>
+      </details>
+
+      <details className="settings-section">
+        <summary>
+          <div>
+            <strong>Map Profiles</strong>
+            <span>Choose the active map profile, manage your own profiles, and administer global profiles.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          <div className="settings-subsection">
+            <h3>Active map profile</h3>
+            <label>
+              Profile
+              <select
+                value={profileId ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === '__create__') {
+                    setShowSettingsOverlay(false);
+                    openCreateProfileModal();
+                  } else if (!value) {
+                    setProfileId(null);
+                  } else {
+                    setProfileId(Number(value));
+                  }
+                }}
+              >
+                {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
+                <option value="">Demo mode</option>
+                {ownedProfiles.length > 0 && (
+                  <option value="" disabled>
+                    Your profiles
+                  </option>
+                )}
+                {ownedProfiles.map((profile) => (
+                  <option key={`settings-owned-${profile.id}`} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+                {publicProfiles.length > 0 && (
+                  <option value="" disabled>
+                    ----------
+                  </option>
+                )}
+                {publicProfiles.map((profile) => (
+                  <option key={`settings-public-${profile.id}`} value={profile.id}>
+                    {profile.name} (Public)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="settings-note">
+              <strong>Current selection</strong>
+              <span>{selectedProfile?.name ?? 'Demo mode'}</span>
+            </div>
+            <div className="profile-actions">
+              {authSession?.authenticated && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSettingsOverlay(false);
+                    openCreateProfileModal();
+                  }}
+                >
+                  Create profile
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSettingsOverlay(false);
+                  void handleEditProfile();
+                }}
+                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+              >
+                Edit
+              </button>
+              <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
+                Delete
+              </button>
+              <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
+                Export JSON
+              </button>
+              <label className="import-label">
+                Import JSON
+                <input
+                  type="file"
+                  accept="application/json"
+                  onChange={handleImport}
+                  disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+                />
+              </label>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div className="settings-subsection">
+              <h3>Global profile management</h3>
+              <label>
+                Profile name
+                <input value={newAdminProfileName} onChange={(event) => setNewAdminProfileName(event.target.value)} />
+              </label>
+              <label>
+                Owner
+                <select value={newAdminProfileOwnerId} onChange={(event) => setNewAdminProfileOwnerId(event.target.value)}>
+                  <option value="">Select user</option>
+                  {adminUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.display_name || user.username || `User ${user.id}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {renderProfileColorField(newAdminProfileColor, setNewAdminProfileColor)}
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={newAdminProfilePublic}
+                  onChange={(event) => setNewAdminProfilePublic(event.target.checked)}
+                />
+                Public profile
+              </label>
+              <button type="button" className="accent-button" onClick={handleAdminCreateProfile}>
+                Create server profile
+              </button>
+              <ul className="trip-list">
+                {adminProfiles.map((profile) => (
+                  <li key={profile.id} className="trip-card admin-card">
+                    <div className="trip-main">
+                      <strong>{profile.name}</strong>
+                      <span>{profile.owner_label || 'Unknown owner'}</span>
+                    </div>
+                    <div className="admin-actions">
+                      <button type="button" onClick={() => handleAdminEditProfile(profile)}>
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => handleAdminToggleProfilePublic(profile)}>
+                        {profile.is_public ? 'Make private' : 'Make public'}
+                      </button>
+                      <button type="button" onClick={() => handleAdminDeleteProfile(profile.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
+    </>
+  );
 
   if (authLoading) {
     return (
@@ -2341,10 +3058,7 @@ function App() {
               onChange={(event) => {
                 const value = event.target.value;
                 if (value === '__create__') {
-                  setNewProfileName('');
-                  setNewProfilePublic(false);
-                  setNewProfileColor(nextSuggestedProfileColor);
-                  setShowCreateProfileModal(true);
+                  openCreateProfileModal();
                 } else if (!value) {
                   setProfileId(null);
                 } else {
@@ -3176,250 +3890,16 @@ function App() {
       {showSettingsOverlay && (
         <div className="first-run-modal settings-modal">
           <div className="first-run-card settings-card">
-            <h2>Settings</h2>
-            <p>Account, application, and server configuration.</p>
-            <div className="trip-form">
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={themeMode === 'light'}
-                  onChange={(event) => setThemeMode(event.target.checked ? 'light' : 'dark')}
-                />
-                Use light theme
-              </label>
-            </div>
-            {!authSession?.authenticated && authSession?.has_local_users && !authSession?.oidc_enabled && (
-              <div className="trip-form">
-                <p>Log in with a local account to edit profiles and visits.</p>
-                <button
-                  type="button"
-                  className="accent-button"
-                  onClick={() => {
-                    setShowSettingsOverlay(false);
-                    setShowLoginModal(true);
-                  }}
-                >
-                  Open login
-                </button>
+            <div className="settings-card__header">
+              <div>
+                <h2>Settings</h2>
+                <p>Account, application, and server configuration.</p>
               </div>
-            )}
-            {isAdmin && (
-              <>
-                <div className="trip-form">
-                  <h3>Application Administration</h3>
-                  <p>Admin tools for users, profiles, auth, and database configuration.</p>
-                </div>
-
-                <div className="trip-form">
-                  <h3>User management</h3>
-                  <label>
-                    Username
-                    <input value={newAdminUserUsername} onChange={(event) => setNewAdminUserUsername(event.target.value)} />
-                  </label>
-                  <label>
-                    Display name
-                    <input value={newAdminUserDisplayName} onChange={(event) => setNewAdminUserDisplayName(event.target.value)} />
-                  </label>
-                  <label>
-                    Password
-                    <input type="password" value={newAdminUserPassword} onChange={(event) => setNewAdminUserPassword(event.target.value)} />
-                  </label>
-                  <label className="toggle">
-                    <input type="checkbox" checked={newAdminUserIsAdmin} onChange={(event) => setNewAdminUserIsAdmin(event.target.checked)} />
-                    Create as admin
-                  </label>
-                  <button type="button" className="accent-button" onClick={handleAdminCreateUser}>
-                    Add user
-                  </button>
-                  <ul className="trip-list">
-                    {adminUsers.map((user) => (
-                      <li key={user.id} className="trip-card admin-card">
-                        <div className="trip-main">
-                          <strong>{user.display_name || user.username || `User ${user.id}`}</strong>
-                          <span>@{user.username || 'n/a'} · {user.role}</span>
-                        </div>
-                        <div className="admin-actions">
-                          <button type="button" onClick={() => handleAdminUserRole(user.id, user.is_admin ? 'user' : 'admin')}>
-                            {user.is_admin ? 'Demote' : 'Promote'}
-                          </button>
-                          <input
-                            type="password"
-                            placeholder="New password"
-                            value={adminPasswordReset[user.id] ?? ''}
-                            onChange={(event) =>
-                              setAdminPasswordReset((prev) => ({ ...prev, [user.id]: event.target.value }))
-                            }
-                          />
-                          <button type="button" onClick={() => handleAdminResetPassword(user.id)}>
-                            Reset password
-                          </button>
-                          <button type="button" onClick={() => handleAdminDeleteUser(user.id)}>
-                            Delete
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="trip-form">
-                  <h3>Global profile management</h3>
-                  <label>
-                    Profile name
-                    <input value={newAdminProfileName} onChange={(event) => setNewAdminProfileName(event.target.value)} />
-                  </label>
-                  <label>
-                    Owner
-                    <select value={newAdminProfileOwnerId} onChange={(event) => setNewAdminProfileOwnerId(event.target.value)}>
-                      <option value="">Select user</option>
-                      {adminUsers.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.display_name || user.username || `User ${user.id}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {renderProfileColorField(newAdminProfileColor, setNewAdminProfileColor)}
-                  <label className="toggle">
-                    <input type="checkbox" checked={newAdminProfilePublic} onChange={(event) => setNewAdminProfilePublic(event.target.checked)} />
-                    Public profile
-                  </label>
-                  <button type="button" className="accent-button" onClick={handleAdminCreateProfile}>
-                    Create server profile
-                  </button>
-                  <ul className="trip-list">
-                    {adminProfiles.map((profile) => (
-                      <li key={profile.id} className="trip-card admin-card">
-                        <div className="trip-main">
-                          <strong>{profile.name}</strong>
-                          <span>{profile.owner_label || 'Unknown owner'}</span>
-                        </div>
-                        <div className="admin-actions">
-                          <button type="button" onClick={() => handleAdminEditProfile(profile)}>
-                            Edit
-                          </button>
-                          <button type="button" onClick={() => handleAdminToggleProfilePublic(profile)}>
-                            {profile.is_public ? 'Make private' : 'Make public'}
-                          </button>
-                          <button type="button" onClick={() => handleAdminDeleteProfile(profile.id)}>
-                            Delete
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {adminSettings && (
-                  <>
-                    <div className="trip-form">
-                      <h3>Authentication settings</h3>
-                      <label>
-                        Mode
-                        <select
-                          value={adminSettings.auth_mode}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, auth_mode: event.target.value } : prev))}
-                        >
-                          <option value="local">Username / password</option>
-                          <option value="oidc">OIDC</option>
-                        </select>
-                      </label>
-                      <label>
-                        OIDC issuer
-                        <input
-                          value={adminSettings.oidc_issuer ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_issuer: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        OIDC client id
-                        <input
-                          value={adminSettings.oidc_client_id ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_client_id: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        OIDC client secret
-                        <input
-                          type="password"
-                          value={adminSettings.oidc_client_secret ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, oidc_client_secret: event.target.value } : prev))}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="trip-form">
-                      <h3>Database settings</h3>
-                      <label>
-                        Backend
-                        <select
-                          value={adminSettings.preferred_db_backend}
-                          onChange={(event) =>
-                            setAdminSettings((prev) =>
-                              prev ? { ...prev, preferred_db_backend: event.target.value as 'sqlite' | 'postgres' } : prev,
-                            )
-                          }
-                        >
-                          <option value="sqlite">SQLite</option>
-                          <option value="postgres">Postgres</option>
-                        </select>
-                      </label>
-                      <label>
-                        SQLite path
-                        <input
-                          value={adminSettings.sqlite_db_path ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, sqlite_db_path: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        DB host
-                        <input
-                          value={adminSettings.db_host ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_host: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        DB port
-                        <input
-                          value={adminSettings.db_port ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_port: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        DB name
-                        <input
-                          value={adminSettings.db_name ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_name: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        DB user
-                        <input
-                          value={adminSettings.db_user ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_user: event.target.value } : prev))}
-                        />
-                      </label>
-                      <label>
-                        DB password
-                        <input
-                          type="password"
-                          value={adminSettings.db_password ?? ''}
-                          onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_password: event.target.value } : prev))}
-                        />
-                      </label>
-                      <small>Current backend: {adminSettings.configured_db_backend}. Saving these values marks restart required.</small>
-                    </div>
-
-                    <button type="button" className="accent-button" onClick={handleAdminSaveSettings}>
-                      Save admin settings
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-            <button type="button" onClick={() => setShowSettingsOverlay(false)}>
-              Close
-            </button>
+              <button type="button" onClick={() => setShowSettingsOverlay(false)}>
+                Close
+              </button>
+            </div>
+            <div className="settings-card__body">{renderSettingsBody()}</div>
           </div>
         </div>
       )}

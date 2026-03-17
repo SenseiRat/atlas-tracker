@@ -680,6 +680,13 @@ def current_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
 
+def _normalize_local_username(raw: Any) -> str:
+    username = str(raw or "").strip().lower()
+    if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
+        raise HTTPException(status_code=400, detail="Username must be 3-40 chars: letters, numbers, ., _, -")
+    return username
+
+
 def seed_profiles(conn: DBConnection) -> None:
     # Intentionally empty: first profile is now created via web UI on first run.
     _ = conn
@@ -1989,6 +1996,43 @@ async def get_auth_session(request: Request) -> Dict[str, Any]:
     }
 
 
+@app.put("/api/auth/account")
+async def update_auth_account(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    with get_db() as conn:
+        user = _require_user(request, conn)
+        display_name = str(payload.get("display_name") or "").strip()
+        if not display_name:
+            raise HTTPException(status_code=400, detail="Display name is required")
+
+        username = user.get("username")
+        if str(user.get("oidc_issuer") or "") == "local":
+            username = _normalize_local_username(payload.get("username"))
+
+        password = str(payload.get("password") or "")
+        if password and str(user.get("oidc_issuer") or "") != "local":
+            raise HTTPException(status_code=400, detail="Only local users can change passwords here")
+
+        try:
+            conn.execute(
+                "UPDATE users SET username = ?, display_name = ? WHERE id = ?",
+                (username, display_name, int(user["id"])),
+            )
+        except DB_INTEGRITY_ERRORS as exc:
+            raise HTTPException(status_code=400, detail="Username already exists") from exc
+
+        if password:
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (_hash_password(password), int(user["id"])),
+            )
+
+        updated = conn.execute(
+            "SELECT id, username, email, display_name, role FROM users WHERE id = ?",
+            (int(user["id"]),),
+        ).fetchone()
+    return _serialize_user(updated)
+
+
 @app.get("/api/auth/login")
 async def auth_login(request: Request) -> Response:
     if not OIDC_ENABLED:
@@ -2113,11 +2157,9 @@ async def get_local_users() -> List[Dict[str, Any]]:
 async def create_local_user(payload: Dict[str, Any]) -> Dict[str, Any]:
     if OIDC_ENABLED:
         raise HTTPException(status_code=404, detail="Local users are disabled when OIDC is enabled")
-    username = str(payload.get("username") or "").strip().lower()
+    username = _normalize_local_username(payload.get("username"))
     display_name = str(payload.get("display_name") or "").strip()
     password = str(payload.get("password") or "")
-    if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
-        raise HTTPException(status_code=400, detail="Username must be 3-40 chars: letters, numbers, ., _, -")
     if not display_name:
         raise HTTPException(status_code=400, detail="Display name is required")
     password_hash = _hash_password(password)
@@ -2324,7 +2366,7 @@ async def admin_create_user(payload: Dict[str, Any], request: Request) -> Dict[s
 async def admin_update_user(user_id: int, payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     with get_db() as conn:
         admin_user = _require_admin(request, conn)
-        row = conn.execute("SELECT id, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT id, username, display_name, oidc_issuer, role FROM users WHERE id = ?", (user_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
         next_role = str(payload.get("role") or row["role"] or "user").strip().lower()
@@ -2332,7 +2374,19 @@ async def admin_update_user(user_id: int, payload: Dict[str, Any], request: Requ
             raise HTTPException(status_code=400, detail="Role must be admin or user")
         if int(admin_user["id"]) == int(user_id) and next_role != "admin":
             raise HTTPException(status_code=400, detail="You cannot demote yourself")
-        conn.execute("UPDATE users SET role = ? WHERE id = ?", (next_role, user_id))
+        next_display_name = str(payload.get("display_name") or row["display_name"] or "").strip()
+        if not next_display_name:
+            raise HTTPException(status_code=400, detail="Display name is required")
+        next_username = row["username"]
+        if str(row["oidc_issuer"] or "") == "local":
+            next_username = _normalize_local_username(payload.get("username") or row["username"])
+        try:
+            conn.execute(
+                "UPDATE users SET username = ?, display_name = ?, role = ? WHERE id = ?",
+                (next_username, next_display_name, next_role, user_id),
+            )
+        except DB_INTEGRITY_ERRORS as exc:
+            raise HTTPException(status_code=400, detail="Username already exists") from exc
         updated = conn.execute(
             "SELECT id, username, email, display_name, role FROM users WHERE id = ?",
             (user_id,),
@@ -2343,6 +2397,8 @@ async def admin_update_user(user_id: int, payload: Dict[str, Any], request: Requ
 @app.post("/api/admin/users/{user_id}/password")
 async def admin_reset_user_password(user_id: int, payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     password = str(payload.get("password") or "")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required")
     with get_db() as conn:
         _require_admin(request, conn)
         row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
