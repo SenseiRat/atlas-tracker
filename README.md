@@ -210,9 +210,6 @@ python scripts/seed_db.py
     - `DATA_SYNC_INTERVAL_SECONDS` (default `3600`)
     - `DATA_SYNC_EXTERNAL_REFRESH_ENABLED` (default `0`)
     - `DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS` (default `86400`)
-- `python3 scripts/update_state_regions.py`
-  - Pulls GeoNames Admin1 region names and generates `data_sources/state_regions.json`.
-  - Used by server seeding to name/populate states/regions for countries.
 - `python3 scripts/refresh_external_sources.py`
   - Refreshes:
     - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).

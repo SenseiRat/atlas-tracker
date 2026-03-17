@@ -61,8 +61,7 @@ DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS = max(
 
 SOURCE_DATASET_FILES = {
     "countries": "countries.geojson",
-    "state_regions": "state_regions.json",
-    "state_regions_geojson": "state_regions.geojson",
+    "state_regions": "state_regions.geojson",
     "cities": "cities.json",
     "airports": "airports.json",
     "sites": "sites.json",
@@ -596,6 +595,87 @@ def get_continent_from_country_data(data_value: str) -> Optional[str]:
     return continent or None
 
 
+def parse_json_object(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        loaded = json.loads(str(raw or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def nested_place_properties(item: Dict[str, Any]) -> Dict[str, Any]:
+    properties = item.get("properties", {})
+    return properties if isinstance(properties, dict) else {}
+
+
+def extract_population(item: Dict[str, Any]) -> Optional[int]:
+    properties = nested_place_properties(item)
+    for value in (
+        item.get("population"),
+        properties.get("POP_EST"),
+        properties.get("pop_est"),
+        properties.get("population"),
+    ):
+        parsed = as_float(value)
+        if parsed is not None:
+            return int(parsed)
+    return None
+
+
+def extract_area_sqkm(item: Dict[str, Any]) -> Optional[float]:
+    properties = nested_place_properties(item)
+    for value in (
+        item.get("area_sqkm"),
+        properties.get("area_sqkm"),
+        properties.get("AREA_SQKM"),
+    ):
+        parsed = as_float(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def extract_country_currency(item: Dict[str, Any]) -> Optional[str]:
+    properties = nested_place_properties(item)
+    currency_code = str(
+        properties.get("CURRENCY_CODE")
+        or properties.get("currency_code")
+        or properties.get("currency")
+        or item.get("currency_code")
+        or item.get("currency")
+        or ""
+    ).strip()
+    return currency_code or None
+
+
+def extract_country_economy(item: Dict[str, Any]) -> Optional[str]:
+    properties = nested_place_properties(item)
+    economy = str(properties.get("ECONOMY") or properties.get("economy") or "").strip()
+    return economy or None
+
+def metric_entry(
+    metric_id: str,
+    label: str,
+    place_name: str,
+    value: Any,
+    display_value: str,
+    *,
+    detail: Optional[str] = None,
+    unit: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "id": metric_id,
+        "label": label,
+        "place_name": place_name,
+        "value": value,
+        "display_value": display_value,
+        "detail": detail,
+        "unit": unit,
+    }
+
+
 def current_timestamp() -> str:
     return datetime.utcnow().isoformat()
 
@@ -627,16 +707,13 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
     cities = load_json(DATA_SOURCES_DIR / "cities.json")
     airports = load_json(DATA_SOURCES_DIR / "airports.json")
     sites = load_json(DATA_SOURCES_DIR / "sites.json")
-    state_regions_path = DATA_SOURCES_DIR / "state_regions.json"
-    state_regions = load_json(state_regions_path) if state_regions_path.exists() else []
-    state_regions_geojson_path = DATA_SOURCES_DIR / "state_regions.geojson"
-    state_regions_geojson = load_json(state_regions_geojson_path) if state_regions_geojson_path.exists() else {"features": []}
+    state_regions_path = DATA_SOURCES_DIR / "state_regions.geojson"
+    state_regions = load_json(state_regions_path) if state_regions_path.exists() else {"features": []}
 
     rows: List[tuple] = []
     source_state: Dict[str, Tuple[str, str]] = {}
     iso2_to_iso3: Dict[str, str] = {}
     state_rows: Dict[Tuple[str, str], Tuple[str, str, str, Optional[float], Optional[float], str]] = {}
-    state_geometry_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
     for feature in countries.get("features", []):
         props = feature.get("properties", {})
@@ -659,7 +736,7 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
         )
         source_state[place_id] = ("countries", hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest())
 
-    for feature in state_regions_geojson.get("features", []):
+    for feature in state_regions.get("features", []):
         props = feature.get("properties", {})
         country_code = normalize_country_code(
             props.get("country_code")
@@ -673,73 +750,27 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
         geometry = feature.get("geometry")
         if not country_code or not state_code or not is_polygonal_geometry(geometry):
             continue
-        state_geometry_by_key[(country_code, state_code)] = {
-            "geometry": geometry,
-            "properties": props,
-            "name": str(
-                props.get("name")
-                or props.get("NAME")
-                or props.get("name_en")
-                or props.get("region_name")
-                or state_code
-            ).strip()
-            or state_code,
-            "lat": as_float(props.get("lat") or props.get("latitude") or props.get("center_lat")),
-            "lon": as_float(props.get("lon") or props.get("longitude") or props.get("center_lon")),
-        }
-
-    for region in state_regions:
-        country_code = normalize_country_code(region.get("country_code"), iso2_to_iso3)
-        state_code = extract_state_code(region)
-        if not country_code or not state_code:
-            continue
-        geometry_entry = state_geometry_by_key.get((country_code, state_code), {})
-        lat = as_float(region.get("lat"))
-        lon = as_float(region.get("lon"))
-        if lat is None:
-            lat = geometry_entry.get("lat")
-        if lon is None:
-            lon = geometry_entry.get("lon")
-        name = str(region.get("name") or geometry_entry.get("name") or state_code).strip() or state_code
-        state_key = (country_code, state_code)
-        state_rows[state_key] = (
+        name = str(
+            props.get("name")
+            or props.get("NAME")
+            or props.get("name_en")
+            or props.get("region_name")
+            or state_code
+        ).strip() or state_code
+        state_rows[(country_code, state_code)] = (
             f"state-{country_code}-{state_code}",
             "state",
             name,
             country_code,
-            lat,
-            lon,
+            as_float(props.get("lat") or props.get("latitude") or props.get("center_lat")),
+            as_float(props.get("lon") or props.get("longitude") or props.get("center_lon")),
             json.dumps(
                 {
                     "state_code": state_code,
                     "country_code": country_code,
                     "name": name,
-                    "source": region.get("source"),
-                    "geometry": geometry_entry.get("geometry"),
-                    "geometry_properties": geometry_entry.get("properties"),
-                }
-            ),
-        )
-
-    for state_key, geometry_entry in state_geometry_by_key.items():
-        if state_key in state_rows:
-            continue
-        country_code, state_code = state_key
-        name = str(geometry_entry.get("name") or state_code).strip() or state_code
-        state_rows[state_key] = (
-            f"state-{country_code}-{state_code}",
-            "state",
-            name,
-            country_code,
-            geometry_entry.get("lat"),
-            geometry_entry.get("lon"),
-            json.dumps(
-                {
-                    "state_code": state_code,
-                    "country_code": country_code,
-                    "name": name,
-                    "geometry": geometry_entry.get("geometry"),
-                    "geometry_properties": geometry_entry.get("properties"),
+                    "geometry": geometry,
+                    "geometry_properties": props,
                     "source": "state_regions.geojson",
                 }
             ),
@@ -774,31 +805,6 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("cities", hashlib.sha256(json.dumps(city_payload, sort_keys=True).encode("utf-8")).hexdigest())
-        if country_code and state_code:
-            state_id = f"state-{country_code}-{state_code}"
-            state_key = (country_code, state_code)
-            if state_key not in state_rows:
-                state_rows[state_key] = (
-                    state_id,
-                    "state",
-                    state_code,
-                    country_code,
-                    lat,
-                    lon,
-                    json.dumps({"state_code": state_code, "country_code": country_code}),
-                )
-            else:
-                existing = state_rows[state_key]
-                if existing[4] is None and lat is not None and lon is not None:
-                    state_rows[state_key] = (
-                        existing[0],
-                        existing[1],
-                        existing[2],
-                        existing[3],
-                        lat,
-                        lon,
-                        existing[6],
-                    )
 
     for airport in airports:
         name = airport.get("name") or airport.get("municipality") or "Unknown airport"
@@ -829,31 +835,6 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("airports", hashlib.sha256(json.dumps(airport_payload, sort_keys=True).encode("utf-8")).hexdigest())
-        if country_code and state_code:
-            state_id = f"state-{country_code}-{state_code}"
-            state_key = (country_code, state_code)
-            if state_key not in state_rows:
-                state_rows[state_key] = (
-                    state_id,
-                    "state",
-                    state_code,
-                    country_code,
-                    lat,
-                    lon,
-                    json.dumps({"state_code": state_code, "country_code": country_code}),
-                )
-            else:
-                existing = state_rows[state_key]
-                if existing[4] is None and lat is not None and lon is not None:
-                    state_rows[state_key] = (
-                        existing[0],
-                        existing[1],
-                        existing[2],
-                        existing[3],
-                        lat,
-                        lon,
-                        existing[6],
-                    )
 
     for site in sites:
         name = site.get("name") or "Unknown site"
@@ -884,31 +865,6 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("sites", hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest())
-        if country_code and state_code:
-            state_id = f"state-{country_code}-{state_code}"
-            state_key = (country_code, state_code)
-            if state_key not in state_rows:
-                state_rows[state_key] = (
-                    state_id,
-                    "state",
-                    state_code,
-                    country_code,
-                    lat,
-                    lon,
-                    json.dumps({"state_code": state_code, "country_code": country_code}),
-                )
-            else:
-                existing = state_rows[state_key]
-                if existing[4] is None and lat is not None and lon is not None:
-                    state_rows[state_key] = (
-                        existing[0],
-                        existing[1],
-                        existing[2],
-                        existing[3],
-                        lat,
-                        lon,
-                        existing[6],
-                    )
 
     for state_row in state_rows.values():
         rows.append(state_row)
@@ -1032,7 +988,6 @@ def _app_setting_json(conn: DBConnection, key: str) -> Any:
 
 def _run_external_source_refresh() -> bool:
     scripts = [
-        APP_ROOT / "scripts" / "update_state_regions.py",
         APP_ROOT / "scripts" / "refresh_external_sources.py",
     ]
     for script_path in scripts:
@@ -1222,6 +1177,485 @@ def build_trip_log_payload(conn: DBConnection, row: Any) -> Dict[str, Any]:
         "created_at": row["created_at"],
         "route_points": route_points,
         "segments": segments,
+    }
+
+
+def _total_place_counts(conn: DBConnection) -> Dict[str, int]:
+    totals: Dict[str, int] = {}
+    for place_type in ("country", "state", "city", "airport", "site"):
+        totals[place_type] = int(
+            conn.execute("SELECT COUNT(*) as count FROM places WHERE type = ?", (place_type,)).fetchone()["count"]
+        )
+    return totals
+
+
+def _total_continent_count(conn: DBConnection) -> int:
+    continent_rows = conn.execute("SELECT data FROM places WHERE type = 'country'").fetchall()
+    continents: Set[str] = set()
+    for row in continent_rows:
+        continent = get_continent_from_country_data(row["data"])
+        if continent:
+            continents.add(continent)
+    return len(continents)
+
+
+def _visited_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_id: Optional[int]) -> List[Any]:
+    if profile_id is None:
+        filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
+        return conn.execute(
+            f"""
+            SELECT DISTINCT v.place_id
+            FROM visits v
+            JOIN profiles p ON p.id = v.profile_id
+            WHERE {filter_sql}
+            """,
+            filter_params,
+        ).fetchall()
+    return conn.execute("SELECT place_id FROM visits WHERE profile_id = ?", (profile_id,)).fetchall()
+
+
+def _trip_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_id: Optional[int]) -> List[Any]:
+    if profile_id is None:
+        filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
+        return conn.execute(
+            f"""
+            SELECT t.id, t.estimated_miles, t.layover_place_ids, t.flown_on, t.created_at,
+                   t.origin_place_id, t.destination_place_id
+            FROM trip_logs t
+            JOIN profiles p ON p.id = t.profile_id
+            WHERE {filter_sql}
+            """,
+            filter_params,
+        ).fetchall()
+    return conn.execute(
+        """
+        SELECT id, estimated_miles, layover_place_ids, flown_on, created_at, origin_place_id, destination_place_id
+        FROM trip_logs
+        WHERE profile_id = ?
+        """,
+        (profile_id,),
+    ).fetchall()
+
+
+def _place_rows_by_ids(conn: DBConnection, place_ids: List[str]) -> List[Any]:
+    if not place_ids:
+        return []
+    placeholders = ",".join("?" for _ in place_ids)
+    return conn.execute(
+        f"SELECT id, name, type, lat, lon, country_code, data FROM places WHERE id IN ({placeholders})",
+        place_ids,
+    ).fetchall()
+
+
+def _build_achievements(context: Dict[str, Any]) -> Dict[str, Any]:
+    site_categories = context["site_categories"]
+    heritage_visited = int(site_categories.get("heritage", {}).get("visited", 0))
+    achievements = [
+        {"id": "first_country", "title": "First Stamp", "description": "Visit your first country.", "category": "coverage", "current": int(context["visited_countries"]), "target": 1, "points": 10},
+        {"id": "continent_hopper", "title": "Continent Hopper", "description": "Reach three continents.", "category": "coverage", "current": int(context["visited_continents"]), "target": 3, "points": 18},
+        {"id": "global_six", "title": "Global Six", "description": "Visit all six inhabited continents in the dataset.", "category": "coverage", "current": int(context["visited_continents"]), "target": min(6, int(context["total_continents"])), "points": 35},
+        {"id": "regional_runner", "title": "Regional Runner", "description": "Log visits to ten states or regions.", "category": "coverage", "current": int(context["visited_states"]), "target": 10, "points": 14},
+        {"id": "city_collector", "title": "City Collector", "description": "Visit twenty-five cities.", "category": "coverage", "current": int(context["visited_cities"]), "target": 25, "points": 14},
+        {"id": "jetsetter", "title": "Jet Setter", "description": "Check into ten airports.", "category": "travel", "current": int(context["visited_airports"]), "target": 10, "points": 12},
+        {"id": "trip_logger", "title": "Trip Logger", "description": "Record ten trip logs.", "category": "travel", "current": int(context["trip_count"]), "target": 10, "points": 12},
+        {"id": "marathon_miles", "title": "Marathon Miles", "description": "Accumulate 25,000 estimated flight miles.", "category": "travel", "current": int(round(context["total_estimated_miles"])), "target": 25000, "points": 24},
+        {"id": "timezone_tracker", "title": "Timezone Tracker", "description": "Visit twelve time zones.", "category": "travel", "current": int(context["timezones_visited"]), "target": 12, "points": 18},
+        {"id": "north_south", "title": "Hemisphere Crosser", "description": "Reach both the northern and southern hemispheres.", "category": "geography", "current": 1 if context["north_south_overlap"] else 0, "target": 1, "points": 16},
+        {"id": "east_west", "title": "Meridian Breaker", "description": "Reach both the eastern and western hemispheres.", "category": "geography", "current": 1 if context["east_west_overlap"] else 0, "target": 1, "points": 16},
+        {"id": "quadrant_master", "title": "Quadrant Master", "description": "Visit all four world quadrants.", "category": "geography", "current": 1 if context["all_four_quadrants"] else 0, "target": 1, "points": 28},
+        {"id": "summit_seeker", "title": "Summit Seeker", "description": "Visit a place at or above 2,500 meters.", "category": "geography", "current": int(round(max(0.0, context["highest_elevation_value"]))), "target": 2500, "points": 18},
+        {"id": "heritage_hunter", "title": "Heritage Hunter", "description": "Visit five heritage-category sites.", "category": "lists", "current": heritage_visited, "target": 5, "points": 18},
+    ]
+    items: List[Dict[str, Any]] = []
+    earned_count = 0
+    score = 0
+    for item in achievements:
+        target = max(int(item["target"]), 1)
+        current = max(int(item["current"]), 0)
+        earned = current >= target
+        progress = min(current, target)
+        if earned:
+            earned_count += 1
+            score += int(item["points"])
+        items.append({**item, "earned": earned, "progress_current": progress, "progress_target": target, "progress_percent": round((progress / target) * 100, 1), "progress_label": f"{progress:,} / {target:,}"})
+    return {"earned": earned_count, "total": len(items), "score": score, "items": items}
+
+
+def _build_measurements(context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    measurements: List[Dict[str, Any]] = []
+    if context["highest_elevation"]:
+        measurements.append(metric_entry("highest_elevation", "Highest elevation", context["highest_elevation"][0], round(context["highest_elevation"][1], 1), f"{round(context['highest_elevation'][1]):,} m"))
+    if context["lowest_elevation"]:
+        measurements.append(metric_entry("lowest_elevation", "Lowest elevation", context["lowest_elevation"][0], round(context["lowest_elevation"][1], 1), f"{round(context['lowest_elevation'][1]):,} m"))
+    if context["largest_city"]:
+        measurements.append(metric_entry("largest_city", "Largest city visited", context["largest_city"][0], int(context["largest_city"][1]), f"{int(context['largest_city'][1]):,} people"))
+    if context["largest_country"]:
+        measurements.append(metric_entry("largest_country", "Most populous country visited", context["largest_country"][0], int(context["largest_country"][1]), f"{int(context['largest_country'][1]):,} people", detail=context["largest_country"][2]))
+    if context["largest_state"]:
+        measurements.append(metric_entry("largest_state", "Largest region visited", context["largest_state"][0], round(context["largest_state"][1], 1), f"{round(context['largest_state'][1]):,} sq km"))
+    if context["highest_airport"]:
+        measurements.append(metric_entry("highest_airport", "Highest airport visited", context["highest_airport"][0], round(context["highest_airport"][1], 1), f"{round(context['highest_airport'][1]):,} m"))
+    if context["longest_trip"]:
+        measurements.append(metric_entry("longest_trip", "Longest trip logged", context["longest_trip"][0], round(context["longest_trip"][1], 1), f"{round(context['longest_trip'][1]):,} mi", detail=context["longest_trip"][2]))
+    if context["most_connected_airport"]:
+        measurements.append(metric_entry("most_connected_airport", "Most used airport", context["most_connected_airport"][0], int(context["most_connected_airport"][1]), f"{int(context['most_connected_airport'][1]):,} trip touches"))
+    return measurements
+
+
+def _compute_profile_stats(
+    conn: DBConnection,
+    *,
+    profile_id: Optional[int],
+    user_id: Optional[int],
+    total_counts: Dict[str, int],
+    total_continents: int,
+) -> Dict[str, Any]:
+    visited_rows = _visited_rows_for_profile(conn, profile_id, user_id)
+    visited_ids = [str(row["place_id"]) for row in visited_rows]
+    trip_log_rows = _trip_rows_for_profile(conn, profile_id, user_id)
+    visited_place_rows = _place_rows_by_ids(conn, visited_ids)
+    site_rows = conn.execute("SELECT id, data FROM places WHERE type = 'site'").fetchall()
+
+    trip_place_ids: List[str] = []
+    total_estimated_miles = 0.0
+    total_legs = 0
+    repeated_airport_counts: Dict[str, int] = {}
+    trip_dates: Set[str] = set()
+    for row in trip_log_rows:
+        total_estimated_miles += float(row["estimated_miles"] or 0.0)
+        date_value = str(row["flown_on"] or row["created_at"] or "")[:10]
+        if date_value:
+            trip_dates.add(date_value)
+        layover_ids: List[str] = []
+        try:
+            loaded = json.loads(row["layover_place_ids"] or "[]")
+            if isinstance(loaded, list):
+                layover_ids = [str(item) for item in loaded]
+        except json.JSONDecodeError:
+            layover_ids = []
+        total_legs += max(0, len(layover_ids) + 1)
+        route_ids = [str(row["origin_place_id"]), *layover_ids, str(row["destination_place_id"])]
+        trip_place_ids.extend(route_ids)
+        for airport_id in route_ids:
+            if airport_id.startswith("airport-"):
+                repeated_airport_counts[airport_id] = repeated_airport_counts.get(airport_id, 0) + 1
+
+    trip_place_rows = _place_rows_by_ids(conn, sorted(set(trip_place_ids)))
+    trip_place_names = {str(row["id"]): str(row["name"]) for row in trip_place_rows}
+
+    hemisphere_counts = {"north": 0, "south": 0, "east": 0, "west": 0}
+    hemisphere_quadrants = {"ne": 0, "nw": 0, "se": 0, "sw": 0}
+    farthest_north: Optional[Tuple[str, float]] = None
+    farthest_south: Optional[Tuple[str, float]] = None
+    easternmost: Optional[Tuple[str, float]] = None
+    westernmost: Optional[Tuple[str, float]] = None
+    highest_elevation: Optional[Tuple[str, float]] = None
+    lowest_elevation: Optional[Tuple[str, float]] = None
+    largest_city: Optional[Tuple[str, int]] = None
+    largest_country: Optional[Tuple[str, int, str]] = None
+    largest_state: Optional[Tuple[str, float]] = None
+    highest_airport: Optional[Tuple[str, float]] = None
+    timezone_set: Set[str] = set()
+    currency_set: Set[str] = set()
+    visited_continents_set: Set[str] = set()
+
+    for row in visited_place_rows:
+        lat = as_float(row["lat"])
+        lon = as_float(row["lon"])
+        place_name = str(row["name"] or row["id"])
+        data = parse_json_object(row["data"])
+        lat_side: Optional[str] = None
+        lon_side: Optional[str] = None
+        if lat is not None:
+            if lat >= 0:
+                hemisphere_counts["north"] += 1
+                lat_side = "n"
+            else:
+                hemisphere_counts["south"] += 1
+                lat_side = "s"
+            if farthest_north is None or lat > farthest_north[1]:
+                farthest_north = (place_name, lat)
+            if farthest_south is None or lat < farthest_south[1]:
+                farthest_south = (place_name, lat)
+        if lon is not None:
+            if lon >= 0:
+                hemisphere_counts["east"] += 1
+                lon_side = "e"
+            else:
+                hemisphere_counts["west"] += 1
+                lon_side = "w"
+            if easternmost is None or lon > easternmost[1]:
+                easternmost = (place_name, lon)
+            if westernmost is None or lon < westernmost[1]:
+                westernmost = (place_name, lon)
+        if lat_side and lon_side:
+            hemisphere_quadrants[f"{lat_side}{lon_side}"] = hemisphere_quadrants.get(f"{lat_side}{lon_side}", 0) + 1
+
+        timezone = extract_timezone(data)
+        if timezone:
+            timezone_set.add(timezone)
+
+        elevation_m = extract_elevation_meters(data)
+        if elevation_m is not None:
+            if highest_elevation is None or elevation_m > highest_elevation[1]:
+                highest_elevation = (place_name, elevation_m)
+            if lowest_elevation is None or elevation_m < lowest_elevation[1]:
+                lowest_elevation = (place_name, elevation_m)
+
+        if row["type"] == "country":
+            continent = get_continent_from_country_data(row["data"])
+            if continent:
+                visited_continents_set.add(continent)
+            currency_code = extract_country_currency(data)
+            if currency_code:
+                currency_set.add(currency_code)
+            population = extract_population(data)
+            economy = extract_country_economy(data) or "Country"
+            if population is not None and (largest_country is None or population > largest_country[1]):
+                largest_country = (place_name, population, economy)
+        elif row["type"] == "city":
+            population = extract_population(data)
+            if population is not None and (largest_city is None or population > largest_city[1]):
+                largest_city = (place_name, population)
+        elif row["type"] == "state":
+            area_sqkm = extract_area_sqkm(data)
+            if area_sqkm is not None and (largest_state is None or area_sqkm > largest_state[1]):
+                largest_state = (place_name, area_sqkm)
+        elif row["type"] == "airport" and elevation_m is not None:
+            if highest_airport is None or elevation_m > highest_airport[1]:
+                highest_airport = (place_name, elevation_m)
+
+    longest_streak = 0
+    current_streak = 0
+    previous_day: Optional[datetime] = None
+    for date_text in sorted(trip_dates):
+        try:
+            current_day = datetime.strptime(date_text, "%Y-%m-%d")
+        except ValueError:
+            continue
+        if previous_day and (current_day - previous_day).days == 1:
+            current_streak += 1
+        else:
+            current_streak = 1
+        longest_streak = max(longest_streak, current_streak)
+        previous_day = current_day
+
+    site_category_totals: Dict[str, int] = {}
+    site_category_visited: Dict[str, int] = {}
+    for row in site_rows:
+        payload = parse_json_object(row["data"])
+        category = str(payload.get("category") or "heritage").strip().lower()
+        site_category_totals[category] = site_category_totals.get(category, 0) + 1
+        if row["id"] in visited_ids:
+            site_category_visited[category] = site_category_visited.get(category, 0) + 1
+    site_categories = {
+        category: {"visited": site_category_visited.get(category, 0), "total": total}
+        for category, total in sorted(site_category_totals.items())
+    }
+
+    longest_trip: Optional[Tuple[str, float, str]] = None
+    for row in trip_log_rows:
+        distance = float(row["estimated_miles"] or 0.0)
+        if longest_trip is not None and distance <= longest_trip[1]:
+            continue
+        origin_name = trip_place_names.get(str(row["origin_place_id"]), str(row["origin_place_id"]))
+        destination_name = trip_place_names.get(str(row["destination_place_id"]), str(row["destination_place_id"]))
+        route_label = f"{origin_name} -> {destination_name}"
+        date_label = str(row["flown_on"] or row["created_at"] or "")[:10]
+        longest_trip = (route_label, distance, date_label or "Date unavailable")
+
+    most_connected_airport: Optional[Tuple[str, int]] = None
+    for airport_id, count in repeated_airport_counts.items():
+        airport_name = trip_place_names.get(airport_id, airport_id)
+        if most_connected_airport is None or count > most_connected_airport[1]:
+            most_connected_airport = (airport_name, count)
+
+    visited_countries = count_by_type(conn, "country", visited_ids)
+    visited_states = count_by_type(conn, "state", visited_ids)
+    visited_cities = count_by_type(conn, "city", visited_ids)
+    visited_airports = count_by_type(conn, "airport", visited_ids)
+    visited_sites = count_by_type(conn, "site", visited_ids)
+    world_percent = (visited_countries / total_counts["country"] * 100) if total_counts["country"] else 0
+
+    context = {
+        "visited_countries": visited_countries,
+        "visited_states": visited_states,
+        "visited_cities": visited_cities,
+        "visited_airports": visited_airports,
+        "visited_sites": visited_sites,
+        "visited_continents": len(visited_continents_set),
+        "total_continents": total_continents,
+        "trip_count": len(trip_log_rows),
+        "total_estimated_miles": total_estimated_miles,
+        "timezones_visited": len(timezone_set),
+        "site_categories": site_categories,
+        "north_south_overlap": hemisphere_counts["north"] > 0 and hemisphere_counts["south"] > 0,
+        "east_west_overlap": hemisphere_counts["east"] > 0 and hemisphere_counts["west"] > 0,
+        "all_four_quadrants": all(count > 0 for count in hemisphere_quadrants.values()),
+        "highest_elevation_value": highest_elevation[1] if highest_elevation else 0.0,
+        "highest_elevation": highest_elevation,
+        "lowest_elevation": lowest_elevation,
+        "largest_city": largest_city,
+        "largest_country": largest_country,
+        "largest_state": largest_state,
+        "highest_airport": highest_airport,
+        "longest_trip": longest_trip,
+        "most_connected_airport": most_connected_airport,
+    }
+    achievements = _build_achievements(context)
+    measurements = _build_measurements(context)
+    overall_score = round(
+        visited_countries * 12
+        + len(visited_continents_set) * 28
+        + visited_states * 2
+        + visited_cities * 0.5
+        + visited_airports * 1.5
+        + visited_sites * 3
+        + len(trip_log_rows) * 4
+        + (total_estimated_miles / 400)
+        + len(timezone_set) * 5
+        + achievements["score"] * 1.75,
+        1,
+    )
+
+    return {
+        "continents": {"visited": len(visited_continents_set), "total": total_continents},
+        "countries": {"visited": visited_countries, "total": total_counts["country"], "percent": round(world_percent, 1)},
+        "states": {"visited": visited_states, "total": total_counts["state"]},
+        "cities": {"visited": visited_cities, "total": total_counts["city"]},
+        "airports": {"visited": visited_airports, "total": total_counts["airport"]},
+        "sites": {"visited": visited_sites, "total": total_counts["site"]},
+        "trip_logs": {
+            "count": len(trip_log_rows),
+            "flight_legs": total_legs,
+            "estimated_miles": round(total_estimated_miles, 1),
+            "average_miles_per_trip": round(total_estimated_miles / len(trip_log_rows), 1) if trip_log_rows else 0.0,
+        },
+        "site_categories": site_categories,
+        "hemispheres": {
+            **hemisphere_counts,
+            "quadrants": hemisphere_quadrants,
+            "overlap": {
+                "north_south": hemisphere_counts["north"] > 0 and hemisphere_counts["south"] > 0,
+                "east_west": hemisphere_counts["east"] > 0 and hemisphere_counts["west"] > 0,
+                "all_four_quadrants": all(count > 0 for count in hemisphere_quadrants.values()),
+            },
+        },
+        "geo_extremes": {
+            "farthest_north": {"name": farthest_north[0], "lat": round(farthest_north[1], 4)} if farthest_north else None,
+            "farthest_south": {"name": farthest_south[0], "lat": round(farthest_south[1], 4)} if farthest_south else None,
+            "easternmost": {"name": easternmost[0], "lon": round(easternmost[1], 4)} if easternmost else None,
+            "westernmost": {"name": westernmost[0], "lon": round(westernmost[1], 4)} if westernmost else None,
+            "highest_elevation": {"name": highest_elevation[0], "elevation_m": round(highest_elevation[1], 1)} if highest_elevation else None,
+            "lowest_elevation": {"name": lowest_elevation[0], "elevation_m": round(lowest_elevation[1], 1)} if lowest_elevation else None,
+        },
+        "travel": {
+            "distance_miles": round(total_estimated_miles, 1),
+            "distance_km": round(total_estimated_miles * 1.60934, 1),
+            "timezones_visited": len(timezone_set),
+            "currencies_used": len(currency_set),
+            "longest_trip_streak_days": longest_streak,
+            "repeated_airports": sum(1 for count in repeated_airport_counts.values() if count > 1),
+        },
+        "measurements": measurements,
+        "achievements": achievements,
+        "scorecard": {"overall_score": overall_score, "achievement_score": achievements["score"]},
+    }
+
+
+def _apply_rarity_to_achievements(achievements: Dict[str, Any], public_snapshots: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total_public = len(public_snapshots)
+    earned_counts: Dict[str, int] = {}
+    for snapshot in public_snapshots:
+        for item in snapshot["stats"]["achievements"]["items"]:
+            if item["earned"]:
+                earned_counts[item["id"]] = earned_counts.get(item["id"], 0) + 1
+    return {
+        **achievements,
+        "items": [
+            {
+                **item,
+                "earned_by_public_profiles": earned_counts.get(item["id"], 0),
+                "rarity_percent": round((earned_counts.get(item["id"], 0) / total_public) * 100, 1) if total_public else 0.0,
+            }
+            for item in achievements["items"]
+        ],
+    }
+
+
+def _build_leaderboard(
+    selected_stats: Dict[str, Any],
+    selected_profile_id: Optional[int],
+    selected_profile_public: bool,
+    public_snapshots: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    def rank_entries(metric_key: str, label: str) -> Dict[str, Any]:
+        sorted_entries = sorted(public_snapshots, key=lambda item: (-float(item["metrics"][metric_key]), str(item["name"]).lower(), int(item["id"])))
+        return {
+            "id": metric_key,
+            "label": label,
+            "leaders": [
+                {"profile_id": int(item["id"]), "name": item["name"], "color": item["color"], "value": item["metrics"][metric_key]}
+                for item in sorted_entries[:5]
+            ],
+        }
+
+    for snapshot in public_snapshots:
+        snapshot["metrics"] = {
+            "overall_score": float(snapshot["stats"]["scorecard"]["overall_score"]),
+            "countries": int(snapshot["stats"]["countries"]["visited"]),
+            "continents": int(snapshot["stats"]["continents"]["visited"]),
+            "miles": float(snapshot["stats"]["trip_logs"]["estimated_miles"]),
+            "achievements": int(snapshot["stats"]["achievements"]["earned"]),
+        }
+
+    sorted_overall = sorted(public_snapshots, key=lambda item: (-float(item["metrics"]["overall_score"]), str(item["name"]).lower(), int(item["id"])))
+    top_overall = [
+        {
+            "profile_id": int(item["id"]),
+            "name": item["name"],
+            "color": item["color"],
+            "overall_score": item["metrics"]["overall_score"],
+            "countries": item["metrics"]["countries"],
+            "continents": item["metrics"]["continents"],
+            "miles": item["metrics"]["miles"],
+            "achievements": item["metrics"]["achievements"],
+        }
+        for item in sorted_overall[:10]
+    ]
+
+    selected_summary: Optional[Dict[str, Any]] = None
+    if selected_profile_id is not None:
+        metric_ranks: Dict[str, Optional[int]] = {}
+        leading_categories: List[str] = []
+        for metric_key in ("overall_score", "countries", "continents", "miles", "achievements"):
+            metric_sorted = sorted(public_snapshots, key=lambda item: (-float(item["metrics"][metric_key]), str(item["name"]).lower(), int(item["id"])))
+            rank = next((index + 1 for index, item in enumerate(metric_sorted) if int(item["id"]) == selected_profile_id), None)
+            metric_ranks[metric_key] = rank
+            if rank == 1:
+                leading_categories.append(metric_key)
+        selected_summary = {
+            "eligible": selected_profile_public,
+            "profile_id": selected_profile_id,
+            "overall_rank": metric_ranks["overall_score"],
+            "country_rank": metric_ranks["countries"],
+            "continent_rank": metric_ranks["continents"],
+            "miles_rank": metric_ranks["miles"],
+            "achievement_rank": metric_ranks["achievements"],
+            "leader_categories": leading_categories,
+            "overall_score": selected_stats["scorecard"]["overall_score"],
+        }
+
+    return {
+        "public_profile_count": len(public_snapshots),
+        "current_profile": selected_summary,
+        "top_overall": top_overall,
+        "categories": [
+            rank_entries("countries", "Countries visited"),
+            rank_entries("continents", "Continents visited"),
+            rank_entries("miles", "Flight miles"),
+            rank_entries("achievements", "Achievements earned"),
+        ],
     }
 
 
@@ -1474,6 +1908,13 @@ def _normalize_profile_row(row: Any, viewer_user_id: Optional[int]) -> Dict[str,
         "owner_user_id": owner_user_id,
         "is_owned": is_owned,
     }
+
+
+def _accessible_profile_filter_sql(profile_alias: str, user_id: Optional[int]) -> Tuple[str, Tuple[Any, ...]]:
+    prefix = f"{profile_alias}." if profile_alias else ""
+    if user_id is None:
+        return f"{prefix}is_public = ?", (True,)
+    return f"({prefix}is_public = ? OR {prefix}owner_user_id = ?)", (True, user_id)
 
 
 def _can_read_profile(conn: DBConnection, profile_id: int, user_id: Optional[int]) -> Dict[str, Any]:
@@ -1768,17 +2209,18 @@ async def select_local_user(payload: Dict[str, Any]) -> Response:
 async def get_profiles(request: Request) -> List[Dict[str, Any]]:
     with get_db() as conn:
         user = _optional_user(request, conn)
-        user_id = int(user["id"]) if user else -1
+        user_id = int(user["id"]) if user else None
+        filter_sql, filter_params = _accessible_profile_filter_sql("", user_id)
         rows = conn.execute(
-            """
+            f"""
             SELECT id, name, color, is_public, owner_user_id
             FROM profiles
-            WHERE is_public = ? OR owner_user_id = ?
+            WHERE {filter_sql}
             ORDER BY CASE WHEN owner_user_id = ? THEN 0 ELSE 1 END, LOWER(name)
             """,
-            (True, user_id, user_id),
+            (*filter_params, user_id if user_id is not None else -1),
         ).fetchall()
-    return [_normalize_profile_row(row, None if user_id < 0 else user_id) for row in rows]
+    return [_normalize_profile_row(row, user_id) for row in rows]
 
 
 @app.post("/api/profiles")
@@ -2159,16 +2601,15 @@ async def get_visits(request: Request, profile_id: Optional[int] = None) -> List
         user = _optional_user(request, conn)
         user_id = int(user["id"]) if user else None
         if profile_id is None:
-            if user_id is None:
-                return []
+            filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
             rows = conn.execute(
-                """
+                f"""
                 SELECT v.profile_id, v.place_id, v.visited_at, v.trip_id
                 FROM visits v
                 JOIN profiles p ON p.id = v.profile_id
-                WHERE p.owner_user_id = ?
+                WHERE {filter_sql}
                 """,
-                (user_id,),
+                filter_params,
             ).fetchall()
         else:
             _can_read_profile(conn, profile_id, user_id)
@@ -2228,17 +2669,16 @@ async def get_trip_logs(request: Request, profile_id: Optional[int] = None) -> L
         user = _optional_user(request, conn)
         user_id = int(user["id"]) if user else None
         if profile_id is None:
-            if user_id is None:
-                return []
+            filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
             rows = conn.execute(
-                """
+                f"""
                 SELECT t.id, t.profile_id, t.flown_on, t.origin_place_id, t.destination_place_id, t.layover_place_ids, t.estimated_miles, t.created_at
                 FROM trip_logs t
                 JOIN profiles p ON p.id = t.profile_id
-                WHERE p.owner_user_id = ?
+                WHERE {filter_sql}
                 ORDER BY COALESCE(t.flown_on, t.created_at) DESC, t.id DESC
                 """,
-                (user_id,),
+                filter_params,
             ).fetchall()
         else:
             _can_read_profile(conn, profile_id, user_id)
@@ -2338,298 +2778,45 @@ async def get_stats(request: Request, profile_id: Optional[int] = None) -> Dict[
     with get_db() as conn:
         user = _optional_user(request, conn)
         user_id = int(user["id"]) if user else None
+        selected_profile_public = False
         if profile_id is not None:
-            _can_read_profile(conn, profile_id, user_id)
+            profile = _can_read_profile(conn, profile_id, user_id)
+            selected_profile_public = bool(profile.get("is_public"))
 
-        total_countries = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'country'",
-        ).fetchone()["count"]
-        total_states = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'state'",
-        ).fetchone()["count"]
-        total_cities = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'city'",
-        ).fetchone()["count"]
-        total_airports = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'airport'",
-        ).fetchone()["count"]
-        total_sites = conn.execute(
-            "SELECT COUNT(*) as count FROM places WHERE type = 'site'",
-        ).fetchone()["count"]
+        total_counts = _total_place_counts(conn)
+        total_continents = _total_continent_count(conn)
+        stats = _compute_profile_stats(
+            conn,
+            profile_id=profile_id,
+            user_id=user_id,
+            total_counts=total_counts,
+            total_continents=total_continents,
+        )
 
-        if profile_id is None:
-            if user_id is None:
-                visited_rows = []
-            else:
-                visited_rows = conn.execute(
-                    """
-                    SELECT DISTINCT v.place_id
-                    FROM visits v
-                    JOIN profiles p ON p.id = v.profile_id
-                    WHERE p.owner_user_id = ?
-                    """,
-                    (user_id,),
-                ).fetchall()
-        else:
-            visited_rows = conn.execute(
-                "SELECT place_id FROM visits WHERE profile_id = ?",
-                (profile_id,),
-            ).fetchall()
-
-        visited_ids = [row["place_id"] for row in visited_rows]
-
-        visited_countries = count_by_type(conn, "country", visited_ids)
-        visited_states = count_by_type(conn, "state", visited_ids)
-        visited_cities = count_by_type(conn, "city", visited_ids)
-        visited_airports = count_by_type(conn, "airport", visited_ids)
-        visited_sites = count_by_type(conn, "site", visited_ids)
-
-        continent_rows = conn.execute(
-            "SELECT data FROM places WHERE type = 'country'",
+        public_profile_rows = conn.execute(
+            "SELECT id, name, color, is_public FROM profiles WHERE is_public = ? ORDER BY LOWER(name), id",
+            (True,),
         ).fetchall()
-        total_continents_set: Set[str] = set()
-        for row in continent_rows:
-            continent = get_continent_from_country_data(row["data"])
-            if continent:
-                total_continents_set.add(continent)
-
-        if profile_id is None:
-            if user_id is None:
-                visited_continent_rows = []
-            else:
-                visited_continent_rows = conn.execute(
-                    """
-                    SELECT p.data
-                    FROM places p
-                    JOIN visits v ON p.id = v.place_id
-                    JOIN profiles pr ON pr.id = v.profile_id
-                    WHERE p.type = 'country' AND pr.owner_user_id = ?
-                    """,
-                    (user_id,),
-                ).fetchall()
-        else:
-            visited_continent_rows = conn.execute(
-                """
-                SELECT p.data
-                FROM places p
-                JOIN visits v ON p.id = v.place_id
-                WHERE p.type = 'country' AND (? IS NULL OR v.profile_id = ?)
-                """,
-                (profile_id, profile_id),
-            ).fetchall()
-        visited_continents_set: Set[str] = set()
-        for row in visited_continent_rows:
-            continent = get_continent_from_country_data(row["data"])
-            if continent:
-                visited_continents_set.add(continent)
-
-        if profile_id is None:
-            if user_id is None:
-                trip_log_rows = []
-            else:
-                trip_log_rows = conn.execute(
-                    """
-                    SELECT t.id, t.estimated_miles, t.layover_place_ids, t.flown_on, t.created_at, t.origin_place_id, t.destination_place_id
-                    FROM trip_logs t
-                    JOIN profiles p ON p.id = t.profile_id
-                    WHERE p.owner_user_id = ?
-                    """,
-                    (user_id,),
-                ).fetchall()
-        else:
-            trip_log_rows = conn.execute(
-                "SELECT id, estimated_miles, layover_place_ids, flown_on, created_at, origin_place_id, destination_place_id FROM trip_logs WHERE profile_id = ?",
-                (profile_id,),
-            ).fetchall()
-
-        if visited_ids:
-            placeholders = ",".join("?" for _ in visited_ids)
-            visited_place_rows = conn.execute(
-                f"SELECT id, name, type, lat, lon, country_code, data FROM places WHERE id IN ({placeholders})",
-                visited_ids,
-            ).fetchall()
-        else:
-            visited_place_rows = []
-        site_rows = conn.execute("SELECT id, data FROM places WHERE type = 'site'").fetchall()
-
-    trip_count = len(trip_log_rows)
-    total_estimated_miles = 0.0
-    total_legs = 0
-    repeated_airport_counts: Dict[str, int] = {}
-    trip_dates: Set[str] = set()
-    for row in trip_log_rows:
-        total_estimated_miles += float(row["estimated_miles"] or 0.0)
-        date_value = str(row["flown_on"] or row["created_at"] or "")[:10]
-        if date_value:
-            trip_dates.add(date_value)
-        layover_ids: List[str] = []
-        try:
-            loaded = json.loads(row["layover_place_ids"] or "[]")
-            if isinstance(loaded, list):
-                layover_ids = loaded
-        except json.JSONDecodeError:
-            layover_ids = []
-        total_legs += max(0, len(layover_ids) + 1)
-        for airport_id in [row["origin_place_id"], *layover_ids, row["destination_place_id"]]:
-            airport_key = str(airport_id or "")
-            if airport_key.startswith("airport-"):
-                repeated_airport_counts[airport_key] = repeated_airport_counts.get(airport_key, 0) + 1
-
-    hemisphere_counts = {"north": 0, "south": 0, "east": 0, "west": 0}
-    hemisphere_quadrants = {"ne": 0, "nw": 0, "se": 0, "sw": 0}
-    farthest_north: Optional[Tuple[str, float]] = None
-    farthest_south: Optional[Tuple[str, float]] = None
-    easternmost: Optional[Tuple[str, float]] = None
-    westernmost: Optional[Tuple[str, float]] = None
-    highest_elevation: Optional[Tuple[str, float]] = None
-    timezone_set: Set[str] = set()
-    currency_set: Set[str] = set()
-
-    for row in visited_place_rows:
-        lat = as_float(row["lat"])
-        lon = as_float(row["lon"])
-        place_name = str(row["name"] or row["id"])
-        data = {}
-        try:
-            data = json.loads(row["data"] or "{}")
-        except json.JSONDecodeError:
-            data = {}
-
-        lat_side: Optional[str] = None
-        lon_side: Optional[str] = None
-        if lat is not None:
-            if lat >= 0:
-                hemisphere_counts["north"] += 1
-                lat_side = "n"
-            else:
-                hemisphere_counts["south"] += 1
-                lat_side = "s"
-            if farthest_north is None or lat > farthest_north[1]:
-                farthest_north = (place_name, lat)
-            if farthest_south is None or lat < farthest_south[1]:
-                farthest_south = (place_name, lat)
-        if lon is not None:
-            if lon >= 0:
-                hemisphere_counts["east"] += 1
-                lon_side = "e"
-            else:
-                hemisphere_counts["west"] += 1
-                lon_side = "w"
-            if easternmost is None or lon > easternmost[1]:
-                easternmost = (place_name, lon)
-            if westernmost is None or lon < westernmost[1]:
-                westernmost = (place_name, lon)
-        if lat_side and lon_side:
-            quadrant = f"{lat_side}{lon_side}"
-            hemisphere_quadrants[quadrant] = hemisphere_quadrants.get(quadrant, 0) + 1
-
-        timezone = extract_timezone(data)
-        if timezone:
-            timezone_set.add(timezone)
-
-        elevation_m = extract_elevation_meters(data)
-        if elevation_m is not None and (highest_elevation is None or elevation_m > highest_elevation[1]):
-            highest_elevation = (place_name, elevation_m)
-
-        if row["type"] == "country":
-            properties = data.get("properties", {}) if isinstance(data, dict) else {}
-            currency_code = str(
-                properties.get("CURRENCY_CODE")
-                or properties.get("currency_code")
-                or properties.get("currency")
-                or ""
-            ).strip()
-            if currency_code:
-                currency_set.add(currency_code)
-
-    longest_streak = 0
-    current_streak = 0
-    previous_day: Optional[datetime] = None
-    for date_text in sorted(trip_dates):
-        try:
-            current_day = datetime.strptime(date_text, "%Y-%m-%d")
-        except ValueError:
-            continue
-        if previous_day and (current_day - previous_day).days == 1:
-            current_streak += 1
-        else:
-            current_streak = 1
-        longest_streak = max(longest_streak, current_streak)
-        previous_day = current_day
-
-    site_category_totals: Dict[str, int] = {}
-    site_category_visited: Dict[str, int] = {}
-    for row in site_rows:
-        try:
-            payload = json.loads(row["data"] or "{}")
-        except json.JSONDecodeError:
-            payload = {}
-        category = str(payload.get("category") or "heritage").strip().lower()
-        site_category_totals[category] = site_category_totals.get(category, 0) + 1
-        if row["id"] in visited_ids:
-            site_category_visited[category] = site_category_visited.get(category, 0) + 1
-
-    site_categories = {
-        category: {
-            "visited": site_category_visited.get(category, 0),
-            "total": total,
-        }
-        for category, total in sorted(site_category_totals.items())
-    }
-
-    world_percent = (visited_countries / total_countries * 100) if total_countries else 0
-
-    return {
-        "continents": {
-            "visited": len(visited_continents_set),
-            "total": len(total_continents_set),
-        },
-        "countries": {
-            "visited": visited_countries,
-            "total": total_countries,
-            "percent": round(world_percent, 1),
-        },
-        "states": {"visited": visited_states, "total": total_states},
-        "cities": {"visited": visited_cities, "total": total_cities},
-        "airports": {"visited": visited_airports, "total": total_airports},
-        "sites": {"visited": visited_sites, "total": total_sites},
-        "trip_logs": {
-            "count": trip_count,
-            "flight_legs": total_legs,
-            "estimated_miles": round(total_estimated_miles, 1),
-            "average_miles_per_trip": round(total_estimated_miles / trip_count, 1) if trip_count else 0.0,
-        },
-        "site_categories": site_categories,
-        "hemispheres": {
-            **hemisphere_counts,
-            "quadrants": hemisphere_quadrants,
-            "overlap": {
-                "north_south": hemisphere_counts["north"] > 0 and hemisphere_counts["south"] > 0,
-                "east_west": hemisphere_counts["east"] > 0 and hemisphere_counts["west"] > 0,
-                "all_four_quadrants": all(count > 0 for count in hemisphere_quadrants.values()),
-            },
-        },
-        "geo_extremes": {
-            "farthest_north": {"name": farthest_north[0], "lat": round(farthest_north[1], 4)} if farthest_north else None,
-            "farthest_south": {"name": farthest_south[0], "lat": round(farthest_south[1], 4)} if farthest_south else None,
-            "easternmost": {"name": easternmost[0], "lon": round(easternmost[1], 4)} if easternmost else None,
-            "westernmost": {"name": westernmost[0], "lon": round(westernmost[1], 4)} if westernmost else None,
-            "highest_elevation": {
-                "name": highest_elevation[0],
-                "elevation_m": round(highest_elevation[1], 1),
+        public_snapshots = [
+            {
+                "id": int(row["id"]),
+                "name": str(row["name"]),
+                "color": normalize_profile_color(row["color"]),
+                "is_public": bool(row["is_public"]),
+                "stats": _compute_profile_stats(
+                    conn,
+                    profile_id=int(row["id"]),
+                    user_id=user_id,
+                    total_counts=total_counts,
+                    total_continents=total_continents,
+                ),
             }
-            if highest_elevation
-            else None,
-        },
-        "travel": {
-            "distance_miles": round(total_estimated_miles, 1),
-            "distance_km": round(total_estimated_miles * 1.60934, 1),
-            "timezones_visited": len(timezone_set),
-            "currencies_used": len(currency_set),
-            "longest_trip_streak_days": longest_streak,
-            "repeated_airports": sum(1 for count in repeated_airport_counts.values() if count > 1),
-        },
-    }
+            for row in public_profile_rows
+        ]
+
+        stats["achievements"] = _apply_rarity_to_achievements(stats["achievements"], public_snapshots)
+        stats["leaderboard"] = _build_leaderboard(stats, profile_id, selected_profile_public, public_snapshots)
+        return stats
 
 
 @app.get("/api/export")

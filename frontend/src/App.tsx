@@ -4,9 +4,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
 type ActiveProfile = number | 'all' | null;
-type CountryScope = 'all' | 'countries' | `country:${string}`;
+type ListScope = 'all' | 'visited' | 'unvisited';
 type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
-
 type Place = {
   id: string;
   name: string;
@@ -52,6 +51,45 @@ type TripLog = {
   }>;
 };
 
+type Measurement = {
+  id: string;
+  label: string;
+  place_name: string;
+  value: number | string;
+  display_value: string;
+  detail?: string | null;
+  unit?: string | null;
+};
+
+type Achievement = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  current: number;
+  target: number;
+  points: number;
+  earned: boolean;
+  progress_current: number;
+  progress_target: number;
+  progress_percent: number;
+  progress_label: string;
+  earned_by_public_profiles?: number;
+  rarity_percent?: number;
+};
+
+type LeaderboardProfile = {
+  profile_id: number;
+  name: string;
+  color: string;
+  overall_score?: number;
+  countries?: number;
+  continents?: number;
+  miles?: number;
+  achievements?: number;
+  value?: number;
+};
+
 type Stats = {
   continents: { visited: number; total: number };
   countries: { visited: number; total: number; percent: number };
@@ -79,6 +117,7 @@ type Stats = {
     easternmost?: { name: string; lon: number } | null;
     westernmost?: { name: string; lon: number } | null;
     highest_elevation?: { name: string; elevation_m: number } | null;
+    lowest_elevation?: { name: string; elevation_m: number } | null;
   };
   travel: {
     distance_miles: number;
@@ -89,6 +128,37 @@ type Stats = {
     repeated_airports: number;
   };
   site_categories: Record<string, { visited: number; total: number }>;
+  measurements: Measurement[];
+  achievements: {
+    earned: number;
+    total: number;
+    score: number;
+    items: Achievement[];
+  };
+  scorecard: {
+    overall_score: number;
+    achievement_score: number;
+  };
+  leaderboard: {
+    public_profile_count: number;
+    current_profile?: {
+      eligible: boolean;
+      profile_id: number;
+      overall_rank?: number | null;
+      country_rank?: number | null;
+      continent_rank?: number | null;
+      miles_rank?: number | null;
+      achievement_rank?: number | null;
+      leader_categories: string[];
+      overall_score: number;
+    } | null;
+    top_overall: LeaderboardProfile[];
+    categories: Array<{
+      id: string;
+      label: string;
+      leaders: LeaderboardProfile[];
+    }>;
+  };
 };
 
 type Profile = {
@@ -168,7 +238,23 @@ const tabs: { type: PlaceType; label: string; helper: string }[] = [
   { type: 'site', label: 'Sites & Lists', helper: 'UNESCO, parks, wonders, and food/drink lists.' },
 ];
 
-const profilePalette = ['#22c55e', '#f97316', '#38bdf8', '#e879f9', '#facc15', '#fb7185'];
+const profilePalette = [
+  '#16a34a',
+  '#0f766e',
+  '#0891b2',
+  '#0284c7',
+  '#2563eb',
+  '#4f46e5',
+  '#7c3aed',
+  '#9333ea',
+  '#c026d3',
+  '#db2777',
+  '#e11d48',
+  '#dc2626',
+  '#ea580c',
+  '#ca8a04',
+  '#65a30d',
+];
 const defaultProfileColor = profilePalette[0];
 
 function normalizeHexColor(raw: string | undefined, fallback = defaultProfileColor) {
@@ -176,16 +262,118 @@ function normalizeHexColor(raw: string | undefined, fallback = defaultProfileCol
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : fallback;
 }
 
-function darkenHexColor(hex: string, amount = 0.28) {
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToRgb(hex: string) {
   const normalized = normalizeHexColor(hex);
   const parsed = Number.parseInt(normalized.slice(1), 16);
-  const r = (parsed >> 16) & 0xff;
-  const g = (parsed >> 8) & 0xff;
-  const b = parsed & 0xff;
-  const ratio = Math.max(0, Math.min(1, amount));
-  const darken = (channel: number) => Math.max(0, Math.min(255, Math.round(channel * (1 - ratio))));
-  const toHex = (channel: number) => darken(channel).toString(16).padStart(2, '0');
+  return {
+    r: (parsed >> 16) & 0xff,
+    g: (parsed >> 8) & 0xff,
+    b: parsed & 0xff,
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  const toHex = (channel: number) => clamp(Math.round(channel), 0, 255).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function rgbToHsl(r: number, g: number, b: number) {
+  const rr = r / 255;
+  const gg = g / 255;
+  const bb = b / 255;
+  const max = Math.max(rr, gg, bb);
+  const min = Math.min(rr, gg, bb);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  let hue = 0;
+  let saturation = 0;
+
+  if (delta !== 0) {
+    saturation = delta / (1 - Math.abs(2 * lightness - 1));
+    switch (max) {
+      case rr:
+        hue = ((gg - bb) / delta) % 6;
+        break;
+      case gg:
+        hue = (bb - rr) / delta + 2;
+        break;
+      default:
+        hue = (rr - gg) / delta + 4;
+        break;
+    }
+    hue *= 60;
+    if (hue < 0) hue += 360;
+  }
+
+  return { h: hue, s: saturation, l: lightness };
+}
+
+function hslToRgb(h: number, s: number, l: number) {
+  const hue = ((h % 360) + 360) % 360;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const match = l - chroma / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (hue < 60) {
+    r = chroma;
+    g = x;
+  } else if (hue < 120) {
+    r = x;
+    g = chroma;
+  } else if (hue < 180) {
+    g = chroma;
+    b = x;
+  } else if (hue < 240) {
+    g = x;
+    b = chroma;
+  } else if (hue < 300) {
+    r = x;
+    b = chroma;
+  } else {
+    r = chroma;
+    b = x;
+  }
+
+  return {
+    r: (r + match) * 255,
+    g: (g + match) * 255,
+    b: (b + match) * 255,
+  };
+}
+
+function adjustHexColor(
+  hex: string,
+  adjustments: {
+    hueShift?: number;
+    saturationDelta?: number;
+    lightnessDelta?: number;
+  },
+) {
+  const { r, g, b } = hexToRgb(hex);
+  const { h, s, l } = rgbToHsl(r, g, b);
+  const shiftedHue = h + (adjustments.hueShift ?? 0);
+  const nextSaturation = clamp(s + (adjustments.saturationDelta ?? 0), 0, 1);
+  const nextLightness = clamp(l + (adjustments.lightnessDelta ?? 0), 0, 1);
+  const nextRgb = hslToRgb(shiftedHue, nextSaturation, nextLightness);
+  return rgbToHex(nextRgb.r, nextRgb.g, nextRgb.b);
+}
+
+function mixHexColors(first: string, second: string, ratio = 0.5) {
+  const weight = clamp(ratio, 0, 1);
+  const a = hexToRgb(first);
+  const b = hexToRgb(second);
+  return rgbToHex(
+    a.r * (1 - weight) + b.r * weight,
+    a.g * (1 - weight) + b.g * weight,
+    a.b * (1 - weight) + b.b * weight,
+  );
 }
 
 function contrastingColor(hex: string) {
@@ -196,6 +384,204 @@ function contrastingColor(hex: string) {
   const b = parsed & 0xff;
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
   return luminance > 0.55 ? '#0b1220' : '#f8fafc';
+}
+
+function createProfileVisuals(baseColor: string, themeMode: ThemeMode) {
+  const normalized = normalizeHexColor(baseColor);
+
+  const country = themeMode === 'dark' ? mixHexColors(normalized, '#dbeafe', 0.12) : mixHexColors(normalized, '#0f172a', 0.08);
+  const stateFill =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { saturationDelta: 0.08, lightnessDelta: -0.02 })
+      : adjustHexColor(normalized, { saturationDelta: 0.06, lightnessDelta: -0.12 });
+  const selectedRegion =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { saturationDelta: 0.04, lightnessDelta: 0.12 })
+      : adjustHexColor(normalized, { saturationDelta: 0.02, lightnessDelta: 0.02 });
+  const city =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { hueShift: -18, saturationDelta: 0.04, lightnessDelta: 0.18 })
+      : adjustHexColor(normalized, { hueShift: -14, saturationDelta: 0.08, lightnessDelta: -0.04 });
+  const airportBase =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { hueShift: 176, saturationDelta: 0.04, lightnessDelta: 0.14 })
+      : adjustHexColor(normalized, { hueShift: 176, saturationDelta: -0.02, lightnessDelta: -0.08 });
+  const airport =
+    themeMode === 'dark'
+      ? mixHexColors(airportBase, '#f8fafc', 0.08)
+      : mixHexColors(airportBase, '#0f172a', 0.06);
+  const site =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { hueShift: 28, saturationDelta: -0.02, lightnessDelta: 0.08 })
+      : adjustHexColor(normalized, { hueShift: 30, saturationDelta: 0.01, lightnessDelta: -0.1 });
+  const route =
+    themeMode === 'dark'
+      ? adjustHexColor(normalized, { hueShift: -10, saturationDelta: -0.06, lightnessDelta: 0.1 })
+      : adjustHexColor(normalized, { hueShift: -8, saturationDelta: -0.02, lightnessDelta: -0.14 });
+
+  return {
+    base: normalized,
+    country,
+    stateFill,
+    selectedRegion,
+    city,
+    airport,
+    site,
+    route,
+  };
+}
+
+function createAirportIconId(fill: string, stroke: string) {
+  return `airport-icon-${normalizeHexColor(fill).slice(1)}-${normalizeHexColor(stroke).slice(1)}`;
+}
+
+function createAirportIconImage(fill: string, stroke: string) {
+  const size = 40;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not create airport icon canvas.');
+  }
+
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(20, 32);
+  ctx.lineTo(20, 15);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(20, 11.5, 5.6, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(18.5, 30.5);
+  ctx.lineTo(20, 34.5);
+  ctx.lineTo(21.5, 30.5);
+  ctx.closePath();
+  ctx.fillStyle = stroke;
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function createSiteIconId(fill: string, stroke: string) {
+  return `site-icon-${normalizeHexColor(fill).slice(1)}-${normalizeHexColor(stroke).slice(1)}`;
+}
+
+function createSiteIconImage(fill: string, stroke: string) {
+  const size = 44;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not create site icon canvas.');
+  }
+
+  const center = size / 2;
+  const outer = 13;
+  const inner = 8.5;
+
+  ctx.translate(center, center);
+  ctx.rotate(Math.PI / 4);
+  ctx.translate(-center, -center);
+
+  ctx.beginPath();
+  ctx.moveTo(center, center - outer);
+  ctx.lineTo(center + inner, center - inner);
+  ctx.lineTo(center + outer, center);
+  ctx.lineTo(center + inner, center + inner);
+  ctx.lineTo(center, center + outer);
+  ctx.lineTo(center - inner, center + inner);
+  ctx.lineTo(center - outer, center);
+  ctx.lineTo(center - inner, center - inner);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 2.2;
+  ctx.lineJoin = 'round';
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(center, center, 3, 0, Math.PI * 2);
+  ctx.fillStyle = stroke;
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function ensureAirportIcons(
+  map: MapLibreMap,
+  icons: Array<{
+    fill: string;
+    stroke: string;
+  }>,
+) {
+  const missingIcons = icons.filter(({ fill, stroke }) => !map.hasImage(createAirportIconId(fill, stroke)));
+  if (missingIcons.length === 0) return;
+
+  missingIcons.forEach(({ fill, stroke }) => {
+    map.addImage(createAirportIconId(fill, stroke), createAirportIconImage(fill, stroke), { pixelRatio: 2 });
+  });
+}
+
+function ensureSiteIcons(
+  map: MapLibreMap,
+  icons: Array<{
+    fill: string;
+    stroke: string;
+  }>,
+) {
+  const missingIcons = icons.filter(({ fill, stroke }) => !map.hasImage(createSiteIconId(fill, stroke)));
+  if (missingIcons.length === 0) return;
+
+  missingIcons.forEach(({ fill, stroke }) => {
+    map.addImage(createSiteIconId(fill, stroke), createSiteIconImage(fill, stroke), { pixelRatio: 2 });
+  });
+}
+
+function extendBoundsWithCoordinates(bounds: maplibregl.LngLatBounds, coords: any) {
+  coords.forEach((coord: any) => {
+    if (typeof coord?.[0] === 'number' && typeof coord?.[1] === 'number') {
+      bounds.extend(coord as [number, number]);
+      return;
+    }
+    extendBoundsWithCoordinates(bounds, coord);
+  });
+}
+
+function fitMapToFeature(map: MapLibreMap, feature: MapFeatureCollection['features'][number], padding = 40) {
+  const geometry = feature.geometry;
+  if (!geometry) return false;
+
+  if (geometry.type === 'Point' && Array.isArray(geometry.coordinates)) {
+    const [lon, lat] = geometry.coordinates;
+    map.flyTo({ center: [lon, lat], zoom: 5, duration: 800 });
+    return true;
+  }
+
+  if (
+    (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon' || geometry.type === 'LineString') &&
+    geometry.coordinates
+  ) {
+    const bounds = new maplibregl.LngLatBounds();
+    extendBoundsWithCoordinates(bounds, geometry.coordinates);
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds as LngLatBoundsLike, { padding, duration: 800 });
+      return true;
+    }
+  }
+
+  return false;
 }
 
 const baseStyle = {
@@ -248,34 +634,34 @@ const mapThemeTokens: Record<
   }
 > = {
   dark: {
-    background: '#0f2740',
-    countryDefault: '#5b7088',
-    countryOutline: '#dbeafe',
-    clusterColor: '#38bdf8',
-    stroke: '#0f172a',
-    city: '#38bdf8',
-    airport: '#f97316',
-    site: '#e879f9',
-    route: '#f59e0b',
-    rasterSaturation: -0.35,
-    rasterContrast: 0.08,
-    rasterBrightnessMin: 0.15,
-    rasterBrightnessMax: 0.72,
+    background: '#091321',
+    countryDefault: '#5f7287',
+    countryOutline: '#d4e1ef',
+    clusterColor: '#93c5fd',
+    stroke: '#e6eef8',
+    city: '#7dd3fc',
+    airport: '#f59e0b',
+    site: '#c084fc',
+    route: '#f4b860',
+    rasterSaturation: -0.38,
+    rasterContrast: 0.12,
+    rasterBrightnessMin: 0.17,
+    rasterBrightnessMax: 0.7,
   },
   light: {
-    background: '#b9d6ea',
-    countryDefault: '#d7dee8',
-    countryOutline: '#475569',
-    clusterColor: '#0369a1',
-    stroke: '#f8fafc',
-    city: '#0ea5e9',
-    airport: '#f97316',
-    site: '#be185d',
-    route: '#d97706',
-    rasterSaturation: -0.05,
-    rasterContrast: 0,
-    rasterBrightnessMin: 0.85,
-    rasterBrightnessMax: 1.15,
+    background: '#dbe8f2',
+    countryDefault: '#d7e0ea',
+    countryOutline: '#31465c',
+    clusterColor: '#2563eb',
+    stroke: '#102235',
+    city: '#0f766e',
+    airport: '#c2410c',
+    site: '#a21caf',
+    route: '#0f4c81',
+    rasterSaturation: -0.1,
+    rasterContrast: 0.04,
+    rasterBrightnessMin: 0.88,
+    rasterBrightnessMax: 1.12,
   },
 };
 
@@ -336,6 +722,7 @@ function App() {
   const [tripLogs, setTripLogs] = useState<TripLog[]>([]);
   const [showTripRoutes, setShowTripRoutes] = useState(false);
   const [showTripForm, setShowTripForm] = useState(false);
+  const [selectedMapPlaceId, setSelectedMapPlaceId] = useState<string | null>(null);
   const [tripForm, setTripForm] = useState({
     flown_on: '',
     origin_place_id: '',
@@ -369,18 +756,23 @@ function App() {
     site: '',
   });
   const [selectedAirportSearchId, setSelectedAirportSearchId] = useState('');
-  const [visitedOnly, setVisitedOnly] = useState<Record<PlaceType, boolean>>({
-    country: false,
-    state: false,
-    city: false,
-    airport: false,
-    site: false,
+  const [listScope, setListScope] = useState<Record<PlaceType, ListScope>>({
+    country: 'all',
+    state: 'all',
+    city: 'all',
+    airport: 'all',
+    site: 'all',
   });
   const [siteCategoryFilter, setSiteCategoryFilter] = useState('all');
-  const [countryScope, setCountryScope] = useState<Record<'state' | 'city', CountryScope>>({
-    state: 'countries',
-    city: 'countries',
+  const [selectedVisitedCountries, setSelectedVisitedCountries] = useState<Record<'state' | 'city', string[]>>({
+    state: [],
+    city: [],
   });
+
+  const nextSuggestedProfileColor = useMemo(() => {
+    const used = new Set(profiles.map((profile) => normalizeHexColor(profile.color)));
+    return profilePalette.find((color) => !used.has(color)) ?? profilePalette[profiles.length % profilePalette.length];
+  }, [profiles]);
 
   const profileColorById = useMemo(() => {
     const map = new Map<number, string>();
@@ -389,6 +781,14 @@ function App() {
     );
     return map;
   }, [profiles]);
+
+  const profileVisualsById = useMemo(() => {
+    const map = new Map<number, ReturnType<typeof createProfileVisuals>>();
+    profileColorById.forEach((color, id) => {
+      map.set(id, createProfileVisuals(color, themeMode));
+    });
+    return map;
+  }, [profileColorById, themeMode]);
 
   useEffect(() => {
     if (typeof profileId !== 'number') {
@@ -473,7 +873,7 @@ function App() {
   };
 
   const visitedIds = useMemo(() => {
-    if (profileId === 'all') {
+    if (profileId === 'all' || profileId === null) {
       return new Set(visits.map((visit) => visit.place_id));
     }
     return new Set(visits.filter((visit) => visit.profile_id === profileId).map((visit) => visit.place_id));
@@ -487,6 +887,36 @@ function App() {
   const isAdmin = Boolean(authSession?.user?.is_admin);
   const ownedProfiles = useMemo(() => profiles.filter((profile) => profile.is_owned), [profiles]);
   const publicProfiles = useMemo(() => profiles.filter((profile) => !profile.is_owned && profile.is_public), [profiles]);
+
+  const renderProfileColorField = (
+    value: string,
+    onChange: (color: string) => void,
+    label = 'Color',
+  ) => {
+    const normalized = normalizeHexColor(value);
+    return (
+      <div className="profile-color-picker" role="radiogroup" aria-label={label}>
+        <span className="profile-color-picker__label">{label}</span>
+        <div className="profile-color-grid">
+          {profilePalette.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`profile-color-option${normalized === color ? ' profile-color-option--active' : ''}`}
+              onClick={() => onChange(color)}
+              role="radio"
+              aria-checked={normalized === color}
+              aria-label={`Use ${color}`}
+            >
+              <span className="profile-color-option__frame" aria-hidden="true">
+                <span className="profile-color-option__swatch" style={{ '--swatch-color': color } as CSSProperties} />
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const visitedCountryCodes = useMemo(() => {
     const codes = new Set<string>();
@@ -512,6 +942,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem('tracker-theme', themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    if (showFirstProfilePrompt) {
+      setNewProfileColor(nextSuggestedProfileColor);
+    }
+  }, [showFirstProfilePrompt, nextSuggestedProfileColor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -562,7 +998,10 @@ function App() {
     const publicProfiles = data.filter((profile) => !profile.is_owned && profile.is_public);
     const preferred = authSession?.authenticated ? ownedProfiles[0] ?? publicProfiles[0] : publicProfiles[0];
 
-    const hasCurrentSelection = typeof profileId === 'number' && data.some((profile) => profile.id === profileId);
+    const hasCurrentSelection =
+      profileId === null ||
+      profileId === 'all' ||
+      (typeof profileId === 'number' && data.some((profile) => profile.id === profileId));
     if (!hasCurrentSelection) {
       setProfileId(preferred?.id ?? null);
     }
@@ -570,16 +1009,9 @@ function App() {
   };
 
   const refreshVisitsStatsAndTrips = async (active: ActiveProfile) => {
-    if (active === null) {
-      setVisits([]);
-      setStats(null);
-      setTripLogs([]);
-      return;
-    }
-
-    const visitsPath = active === 'all' ? '/api/visits' : `/api/visits?profile_id=${active}`;
-    const statsPath = active === 'all' ? '/api/stats' : `/api/stats?profile_id=${active}`;
-    const tripsPath = active === 'all' ? '/api/trip-logs' : `/api/trip-logs?profile_id=${active}`;
+    const visitsPath = active === null || active === 'all' ? '/api/visits' : `/api/visits?profile_id=${active}`;
+    const statsPath = active === null || active === 'all' ? '/api/stats' : `/api/stats?profile_id=${active}`;
+    const tripsPath = active === null || active === 'all' ? '/api/trip-logs' : `/api/trip-logs?profile_id=${active}`;
 
     const [visitsData, statsData, tripsData] = await Promise.all([
       api<Visit[]>(visitsPath),
@@ -707,7 +1139,7 @@ function App() {
           source: 'countries',
           paint: {
             'fill-color': ['coalesce', ['get', 'visit_color'], theme.countryDefault],
-            'fill-opacity': ['case', ['boolean', ['get', 'visited'], false], 0.68, 0.36],
+            'fill-opacity': ['case', ['boolean', ['get', 'visited'], false], 0.41, 0.19],
           },
         });
         map.addLayer({
@@ -734,11 +1166,12 @@ function App() {
         map.addSource('points', {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] } as any,
-          cluster: true,
-          clusterMaxZoom: 5,
-          clusterRadius: 40,
         });
         map.addSource('visited-states', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] } as any,
+        });
+        map.addSource('selected-region', {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] } as any,
         });
@@ -749,7 +1182,7 @@ function App() {
           filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
           paint: {
             'fill-color': ['coalesce', ['get', 'marker_color'], theme.route],
-            'fill-opacity': 0.5,
+            'fill-opacity': 0.2,
           },
         });
         map.addLayer({
@@ -758,8 +1191,29 @@ function App() {
           source: 'visited-states',
           filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
           paint: {
-            'line-color': ['coalesce', ['get', 'marker_stroke'], theme.stroke],
-            'line-width': 1.3,
+            'line-color': '#000000',
+            'line-width': 2.8,
+            'line-opacity': 0.95,
+          },
+        });
+        map.addLayer({
+          id: 'selected-region-fill',
+          type: 'fill',
+          source: 'selected-region',
+          filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+          paint: {
+            'fill-color': ['coalesce', ['get', 'selection_color'], theme.route],
+            'fill-opacity': 0.14,
+          },
+        });
+        map.addLayer({
+          id: 'selected-region-outline',
+          type: 'line',
+          source: 'selected-region',
+          filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+          paint: {
+            'line-color': '#000000',
+            'line-width': 4,
             'line-opacity': 0.95,
           },
         });
@@ -778,31 +1232,39 @@ function App() {
           },
         });
         map.addLayer({
-          id: 'clusters',
-          type: 'circle',
-          source: 'points',
-          filter: ['has', 'point_count'],
-          paint: {
-            'circle-color': theme.clusterColor,
-            'circle-radius': ['step', ['get', 'point_count'], 12, 8, 18, 30, 24],
-          },
-        });
-        map.addLayer({
           id: 'points',
           type: 'circle',
           source: 'points',
-          filter: ['!', ['has', 'point_count']],
+          filter: ['==', ['get', 'point_type'], 'city'],
           paint: {
-            'circle-color': [
-              'case',
-              ['==', ['get', 'point_type'], 'city'], theme.city,
-              ['==', ['get', 'point_type'], 'airport'], theme.airport,
-              ['==', ['get', 'point_type'], 'site'], theme.site,
-              theme.airport,
-            ],
-            'circle-radius': 6,
-            'circle-stroke-color': ['coalesce', ['get', 'profile_color'], theme.stroke],
-            'circle-stroke-width': 1,
+            'circle-color': ['coalesce', ['get', 'marker_color'], theme.airport],
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2.2, 3, 3.2, 6, 4.6, 10, 6.4, 14, 8.2],
+            'circle-stroke-color': '#000000',
+            'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 0, 0.55, 6, 0.8, 12, 1.1],
+          },
+        });
+        map.addLayer({
+          id: 'airport-points',
+          type: 'symbol',
+          source: 'points',
+          filter: ['==', ['get', 'point_type'], 'airport'],
+          layout: {
+            'icon-image': ['get', 'icon_id'],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 0, 0.72, 3, 0.86, 6, 1.04, 10, 1.34, 14, 1.7],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+        });
+        map.addLayer({
+          id: 'site-points',
+          type: 'symbol',
+          source: 'points',
+          filter: ['==', ['get', 'point_type'], 'site'],
+          layout: {
+            'icon-image': ['get', 'icon_id'],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 0, 0.54, 3, 0.7, 6, 0.94, 10, 1.28, 14, 1.68],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
           },
         });
 
@@ -858,27 +1320,23 @@ function App() {
     map.setPaintProperty('background', 'background-color', theme.background);
     map.setPaintProperty('country-fill', 'fill-color', ['coalesce', ['get', 'visit_color'], theme.countryDefault]);
     map.setPaintProperty('country-outline', 'line-color', theme.countryOutline);
-    map.setPaintProperty('clusters', 'circle-color', theme.clusterColor);
     map.setPaintProperty('trip-routes-line', 'line-color', ['coalesce', ['get', 'route_color'], theme.route]);
     map.setPaintProperty('visited-states-fill', 'fill-color', ['coalesce', ['get', 'marker_color'], theme.route]);
-    map.setPaintProperty('visited-states-outline', 'line-color', ['coalesce', ['get', 'marker_stroke'], theme.stroke]);
+    map.setPaintProperty('visited-states-outline', 'line-color', '#000000');
+    map.setPaintProperty('selected-region-fill', 'fill-color', [
+      'coalesce',
+      ['get', 'selection_color'],
+      theme.route,
+    ]);
+    map.setPaintProperty('selected-region-outline', 'line-color', '#000000');
     map.setPaintProperty('visited-states-ring', 'circle-color', ['coalesce', ['get', 'marker_color'], theme.route]);
     map.setPaintProperty('visited-states-ring', 'circle-stroke-color', [
       'coalesce',
       ['get', 'marker_stroke'],
       theme.stroke,
     ]);
-    map.setPaintProperty('points', 'circle-color', [
-      'case',
-      ['==', ['get', 'point_type'], 'city'],
-      theme.city,
-      ['==', ['get', 'point_type'], 'airport'],
-      theme.airport,
-      ['==', ['get', 'point_type'], 'site'],
-      theme.site,
-      theme.airport,
-    ]);
-    map.setPaintProperty('points', 'circle-stroke-color', ['coalesce', ['get', 'profile_color'], theme.stroke]);
+    map.setPaintProperty('points', 'circle-color', ['coalesce', ['get', 'marker_color'], theme.airport]);
+    map.setPaintProperty('points', 'circle-stroke-color', '#000000');
     map.setPaintProperty('osm', 'raster-saturation', theme.rasterSaturation);
     map.setPaintProperty('osm', 'raster-contrast', theme.rasterContrast);
     map.setPaintProperty('osm', 'raster-brightness-min', theme.rasterBrightnessMin);
@@ -888,155 +1346,243 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapReady) return;
+    void (async () => {
+      const countrySource = map.getSource('countries') as maplibregl.GeoJSONSource | undefined;
+      const pointSource = map.getSource('points') as maplibregl.GeoJSONSource | undefined;
+      const routeSource = map.getSource('trip-routes') as maplibregl.GeoJSONSource | undefined;
+      const visitedStatesSource = map.getSource('visited-states') as maplibregl.GeoJSONSource | undefined;
+      const selectedRegionSource = map.getSource('selected-region') as maplibregl.GeoJSONSource | undefined;
+      if (
+        !countrySource ||
+        !pointSource ||
+        !routeSource ||
+        !visitedStatesSource ||
+        !selectedRegionSource ||
+        !countryGeoRef.current ||
+        !stateGeoRef.current
+      ) {
+        setMapStatus('Overlay sync skipped: map sources not ready');
+        return;
+      }
 
-    const countrySource = map.getSource('countries') as maplibregl.GeoJSONSource | undefined;
-    const pointSource = map.getSource('points') as maplibregl.GeoJSONSource | undefined;
-    const routeSource = map.getSource('trip-routes') as maplibregl.GeoJSONSource | undefined;
-    const visitedStatesSource = map.getSource('visited-states') as maplibregl.GeoJSONSource | undefined;
-    if (!countrySource || !pointSource || !routeSource || !visitedStatesSource || !countryGeoRef.current || !stateGeoRef.current) {
-      setMapStatus('Overlay sync skipped: map sources not ready');
-      return;
-    }
+      const isCollectiveDemoMode = profileId === null;
+      const isAttributedProfileAggregate = profileId === 'all';
+      const isMultiProfileView = isCollectiveDemoMode || isAttributedProfileAggregate;
+      const activeVisits =
+        isMultiProfileView
+          ? visits
+          : visits.filter((visit) => visit.profile_id === profileId);
+      const defaultVisuals = createProfileVisuals(defaultProfileColor, themeMode);
 
-    const activeVisits =
-      profileId === 'all' ? visits : visits.filter((visit) => visit.profile_id === profileId);
+      const countryColorById = new Map<string, string>();
+      activeVisits.forEach((visit) => {
+        const visuals =
+          isMultiProfileView
+            ? profileVisualsById.get(visit.profile_id) ?? defaultVisuals
+            : typeof profileId === 'number'
+              ? profileVisualsById.get(profileId) ?? defaultVisuals
+              : defaultVisuals;
+        countryColorById.set(visit.place_id, visuals.country);
+      });
 
-    const countryColorById = new Map<string, string>();
-    activeVisits.forEach((visit) => {
-      const color =
-        profileId === 'all'
-          ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
-          : profileColorById.get(profileId) ?? defaultProfileColor;
-      countryColorById.set(visit.place_id, color);
-    });
+      const countryFeatures = countryGeoRef.current.features.map((feature) => ({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          visited: countryColorById.has(feature.id),
+          visit_color: countryColorById.get(feature.id) ?? null,
+        },
+      }));
+      countrySource.setData({ type: 'FeatureCollection', features: countryFeatures } as any);
 
-    const countryFeatures = countryGeoRef.current.features.map((feature) => ({
-      ...feature,
-      properties: {
-        ...feature.properties,
-        visited: countryColorById.has(feature.id),
-        visit_color: countryColorById.get(feature.id) ?? null,
-      },
-    }));
-    countrySource.setData({ type: 'FeatureCollection', features: countryFeatures } as any);
+      const pointLookup = new Map(
+        ['city', 'airport', 'site']
+          .flatMap((type) => places[type as PlaceType])
+          .map((place) => [place.id, place]),
+      );
 
-    const pointLookup = new Map(
-      ['city', 'airport', 'site']
-        .flatMap((type) => places[type as PlaceType])
-        .map((place) => [place.id, place]),
-    );
+      const pointFeatures = Array.from(
+        new Map(activeVisits.map((visit) => [visit.place_id, visit])).values(),
+      )
+        .map((visit) => {
+          const place = pointLookup.get(visit.place_id);
+          if (!place || place.lat === undefined || place.lon === undefined) return null;
 
-    const pointFeatures = activeVisits
-      .map((visit) => {
-        const place = pointLookup.get(visit.place_id);
-        if (!place || place.lat === undefined || place.lon === undefined) return null;
+          const visuals =
+            isMultiProfileView
+              ? profileVisualsById.get(visit.profile_id) ?? defaultVisuals
+              : typeof profileId === 'number'
+                ? profileVisualsById.get(profileId) ?? defaultVisuals
+                : defaultVisuals;
+          const pointType = place.id.startsWith('city-')
+            ? 'city'
+            : place.id.startsWith('airport-')
+              ? 'airport'
+              : 'site';
+          const markerColor =
+            pointType === 'city' ? visuals.city : pointType === 'airport' ? visuals.airport : visuals.site;
+          const markerStroke = contrastingColor(markerColor);
 
-        const profileColor =
-          profileId === 'all'
-            ? profileColorById.get(visit.profile_id) ?? mapThemeTokens[themeMode].airport
-            : mapThemeTokens[themeMode].stroke;
-        const baseColor =
-          profileId === 'all'
-            ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
-            : profileColorById.get(profileId) ?? defaultProfileColor;
-        const pointType = place.id.startsWith('city-')
-          ? 'city'
-          : place.id.startsWith('airport-')
-            ? 'airport'
-            : 'site';
-
-        return {
-          type: 'Feature',
-          id: place.id,
-          geometry: { type: 'Point', coordinates: [place.lon, place.lat] },
+          return {
+            type: 'Feature',
+            id: place.id,
+            geometry: { type: 'Point', coordinates: [place.lon, place.lat] },
           properties: {
             name: place.name,
             point_type: pointType,
-            profile_color: profileId === 'all' ? profileColor : contrastingColor(baseColor),
+            marker_color: markerColor,
+            marker_stroke: markerStroke,
+            icon_id:
+              pointType === 'airport'
+                ? createAirportIconId(markerColor, markerStroke)
+                : pointType === 'site'
+                  ? createSiteIconId(markerColor, markerStroke)
+                  : null,
           },
         };
       })
       .filter(Boolean);
 
-    pointSource.setData({ type: 'FeatureCollection', features: pointFeatures } as any);
+      const airportIcons = pointFeatures
+        .filter(
+          (feature): feature is (typeof pointFeatures)[number] & {
+            properties: { point_type: string; marker_color: string; marker_stroke: string };
+          } => Boolean(feature) && (feature as any).properties?.point_type === 'airport',
+        )
+        .map((feature) => ({
+          fill: String((feature as any).properties.marker_color),
+          stroke: String((feature as any).properties.marker_stroke),
+        }));
+      const siteIcons = pointFeatures
+        .filter(
+          (feature): feature is (typeof pointFeatures)[number] & {
+            properties: { point_type: string; marker_color: string; marker_stroke: string };
+          } => Boolean(feature) && (feature as any).properties?.point_type === 'site',
+        )
+        .map((feature) => ({
+          fill: String((feature as any).properties.marker_color),
+          stroke: String((feature as any).properties.marker_stroke),
+        }));
+      ensureAirportIcons(map, airportIcons);
+      ensureSiteIcons(map, siteIcons);
+      pointSource.setData({ type: 'FeatureCollection', features: pointFeatures } as any);
 
-    const stateMarkerColorById = new Map<string, string>();
-    activeVisits.forEach((visit) => {
-      if (!visit.place_id.startsWith('state-')) return;
-      const baseColor =
-        profileId === 'all'
-          ? profileColorById.get(visit.profile_id) ?? defaultProfileColor
-          : profileColorById.get(profileId) ?? defaultProfileColor;
-      stateMarkerColorById.set(visit.place_id, darkenHexColor(baseColor, 0.28));
-    });
+      const stateMarkerColorById = new Map<string, string>();
+      const stateProfileIdById = new Map<string, number>();
+      activeVisits.forEach((visit) => {
+        if (!visit.place_id.startsWith('state-')) return;
+        const visuals =
+          isMultiProfileView
+            ? profileVisualsById.get(visit.profile_id) ?? defaultVisuals
+            : typeof profileId === 'number'
+              ? profileVisualsById.get(profileId) ?? defaultVisuals
+              : defaultVisuals;
+        stateMarkerColorById.set(visit.place_id, visuals.stateFill);
+        stateProfileIdById.set(visit.place_id, visit.profile_id);
+      });
 
-    const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature]));
-    const stateFeatures = activeVisits
-      .map((visit) => stateLookup.get(visit.place_id))
-      .filter((feature): feature is MapFeatureCollection['features'][number] => Boolean(feature?.geometry))
-      .map((feature) => ({
-        type: 'Feature',
-        id: feature.id,
-        geometry: feature.geometry,
-        properties: {
-          ...feature.properties,
-          marker_color: stateMarkerColorById.get(feature.id) ?? darkenHexColor(defaultProfileColor, 0.28),
-          marker_stroke: contrastingColor(
-            stateMarkerColorById.get(feature.id) ?? darkenHexColor(defaultProfileColor, 0.28),
-          ),
-        },
-      }));
-    visitedStatesSource.setData({ type: 'FeatureCollection', features: stateFeatures } as any);
-
-    const routeFeatures: Array<Record<string, unknown>> = [];
-    const activeTrips =
-      profileId === 'all' ? tripLogs : tripLogs.filter((trip) => trip.profile_id === profileId);
-
-    activeTrips.forEach((trip) => {
-      for (let index = 1; index < trip.route_points.length; index += 1) {
-        const fromPoint = trip.route_points[index - 1];
-        const toPoint = trip.route_points[index];
-        routeFeatures.push({
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [fromPoint.lon, fromPoint.lat],
-              [toPoint.lon, toPoint.lat],
-            ],
-          },
-          properties: {
-            route_color:
-              profileId === 'all'
-                ? profileColorById.get(trip.profile_id) ?? mapThemeTokens[themeMode].route
-                : mapThemeTokens[themeMode].route,
-            trip_id: trip.id,
-            segment: `${fromPoint.name} -> ${toPoint.name}`,
-          },
+      const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature]));
+      const stateFeatures = Array.from(
+        new Map(activeVisits.filter((visit) => visit.place_id.startsWith('state-')).map((visit) => [visit.place_id, visit]))
+          .values(),
+      )
+        .map((visit) => stateLookup.get(visit.place_id))
+        .filter((feature): feature is MapFeatureCollection['features'][number] => Boolean(feature?.geometry))
+        .map((feature) => {
+          const markerColor = stateMarkerColorById.get(feature.id) ?? defaultVisuals.stateFill;
+          return {
+            type: 'Feature',
+            id: feature.id,
+            geometry: feature.geometry,
+            properties: {
+              ...feature.properties,
+              marker_color: markerColor,
+              marker_stroke: contrastingColor(markerColor),
+            },
+          };
         });
-      }
-    });
+      visitedStatesSource.setData({ type: 'FeatureCollection', features: stateFeatures } as any);
 
-    routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
-    map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
-    setMapStatus(
-      `Overlay sync: profile=${String(profileId)} visits=${activeVisits.length} countries=${countryColorById.size} points=${pointFeatures.length} states=${stateFeatures.length} routes=${routeFeatures.length}`,
-    );
-  }, [places, visits, tripLogs, profileId, profileColorById, isMapReady, showTripRoutes, themeMode]);
+      const selectedStateFeature =
+        selectedMapPlaceId && selectedMapPlaceId.startsWith('state-')
+          ? stateLookup.get(selectedMapPlaceId) ?? null
+          : null;
+      const selectedStateVisuals =
+        selectedStateFeature && isMultiProfileView
+          ? profileVisualsById.get(stateProfileIdById.get(selectedStateFeature.id) ?? -1) ?? defaultVisuals
+          : typeof profileId === 'number'
+            ? profileVisualsById.get(profileId) ?? defaultVisuals
+            : defaultVisuals;
+      selectedRegionSource.setData({
+        type: 'FeatureCollection',
+        features: selectedStateFeature
+          ? [
+              {
+                type: 'Feature',
+                id: selectedStateFeature.id,
+                geometry: selectedStateFeature.geometry,
+                properties: {
+                  ...selectedStateFeature.properties,
+                  selection_color: selectedStateVisuals.selectedRegion,
+                },
+              },
+            ]
+          : [],
+      } as any);
+
+      const routeFeatures: Array<Record<string, unknown>> = [];
+      const activeTrips =
+        isMultiProfileView
+          ? tripLogs
+          : tripLogs.filter((trip) => trip.profile_id === profileId);
+
+      activeTrips.forEach((trip) => {
+        for (let index = 1; index < trip.route_points.length; index += 1) {
+          const fromPoint = trip.route_points[index - 1];
+          const toPoint = trip.route_points[index];
+          routeFeatures.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [fromPoint.lon, fromPoint.lat],
+                [toPoint.lon, toPoint.lat],
+              ],
+            },
+            properties: {
+              route_color:
+                isMultiProfileView
+                  ? profileVisualsById.get(trip.profile_id)?.route ?? defaultVisuals.route
+                  : typeof profileId === 'number'
+                    ? profileVisualsById.get(profileId)?.route ?? defaultVisuals.route
+                    : defaultVisuals.route,
+              trip_id: trip.id,
+              segment: `${fromPoint.name} -> ${toPoint.name}`,
+            },
+          });
+        }
+      });
+
+      routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
+      map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
+      setMapStatus(
+        `Overlay sync: profile=${String(profileId)} visits=${activeVisits.length} countries=${countryColorById.size} points=${pointFeatures.length} states=${stateFeatures.length} routes=${routeFeatures.length}`,
+      );
+    })().catch((error) => {
+      setMapStatus('Overlay sync failed');
+      console.error(error);
+    });
+  }, [places, visits, tripLogs, profileId, profileVisualsById, isMapReady, selectedMapPlaceId, showTripRoutes, themeMode]);
 
   const activeFilteredPlaces = useMemo(() => {
     const term = search[activeTab].toLowerCase();
     let scopedPlaces = places[activeTab];
 
     if (activeTab === 'state' || activeTab === 'city') {
-      const scope = countryScope[activeTab];
-      if (scope === 'countries') {
-        scopedPlaces = scopedPlaces.filter(
-          (place) => place.country_code && visitedCountryCodes.has(place.country_code.toUpperCase()),
-        );
-      } else if (scope.startsWith('country:')) {
-        const code = scope.replace('country:', '').toUpperCase();
-        scopedPlaces = scopedPlaces.filter((place) => (place.country_code || '').toUpperCase() === code);
+      const selectedCodes = selectedVisitedCountries[activeTab];
+      if (selectedCodes.length > 0) {
+        const selectedCodeSet = new Set(selectedCodes);
+        scopedPlaces = scopedPlaces.filter((place) => selectedCodeSet.has((place.country_code || '').toUpperCase()));
       }
     }
 
@@ -1061,20 +1607,24 @@ function App() {
         }
         return place.name.toLowerCase().includes(term);
       })
-      .filter((place) => (visitedOnly[activeTab] ? visitedIds.has(place.id) : true))
+      .filter((place) => {
+        const isVisited = visitedIds.has(place.id);
+        if (listScope[activeTab] === 'visited') return isVisited;
+        if (listScope[activeTab] === 'unvisited') return !isVisited;
+        return true;
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return filtered;
   }, [
     activeTab,
-    countryScope,
+    listScope,
     places,
     search,
+    selectedVisitedCountries,
     selectedAirportSearchId,
     siteCategoryFilter,
-    visitedCountryCodes,
     visitedIds,
-    visitedOnly,
   ]);
 
   const MAX_VISIBLE_LIST_ITEMS = 1200;
@@ -1082,6 +1632,14 @@ function App() {
     () => activeFilteredPlaces.slice(0, MAX_VISIBLE_LIST_ITEMS),
     [activeFilteredPlaces],
   );
+
+  const onToggleVisitedCountrySelection = (tab: 'state' | 'city', code: string) => {
+    setSelectedVisitedCountries((prev) => {
+      const current = prev[tab];
+      const next = current.includes(code) ? current.filter((value) => value !== code) : [...current, code];
+      return { ...prev, [tab]: next };
+    });
+  };
 
   const onToggleVisit = async (place: Place) => {
     if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
@@ -1106,25 +1664,20 @@ function App() {
     if (!map) return;
 
     if (place.id.startsWith('country-')) {
+      setSelectedMapPlaceId(null);
       const geo = countryGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=country'));
       const feature = geo.features.find((item) => item.id === place.id);
-      if (!feature) return;
-
-      const bounds = new maplibregl.LngLatBounds();
-      const collectCoords = (coords: any) => {
-        coords.forEach((coord: any) => {
-          if (typeof coord[0] === 'number') {
-            bounds.extend(coord as [number, number]);
-          } else {
-            collectCoords(coord);
-          }
-        });
-      };
-      collectCoords(feature.geometry.coordinates);
-      map.fitBounds(bounds as LngLatBoundsLike, { padding: 40, duration: 800 });
-      return;
+      if (feature && fitMapToFeature(map, feature)) return;
     }
 
+    if (place.id.startsWith('state-')) {
+      setSelectedMapPlaceId(place.id);
+      const geo = stateGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=state'));
+      const feature = geo.features.find((item) => item.id === place.id);
+      if (feature && fitMapToFeature(map, feature, 60)) return;
+    }
+
+    setSelectedMapPlaceId(null);
     if (place.lat !== undefined && place.lon !== undefined) {
       map.flyTo({ center: [place.lon, place.lat], zoom: 5, duration: 800 });
     }
@@ -1148,7 +1701,7 @@ function App() {
       });
 
       setNewProfileName('');
-      setNewProfileColor(defaultProfileColor);
+      setNewProfileColor(nextSuggestedProfileColor);
       setNewProfilePublic(false);
       setShowCreateProfileModal(false);
       await refreshProfiles();
@@ -1351,7 +1904,7 @@ function App() {
     });
     setNewAdminProfileName('');
     setNewAdminProfileOwnerId('');
-    setNewAdminProfileColor(defaultProfileColor);
+    setNewAdminProfileColor(nextSuggestedProfileColor);
     setNewAdminProfilePublic(false);
     await refreshAdminData();
     await refreshProfiles();
@@ -1412,6 +1965,51 @@ function App() {
       return `${place.name}\t${code}`;
     }
     return place.name;
+  };
+
+  const formatSiteCategoryLabel = (category?: string) =>
+    category
+      ? category
+          .split('_')
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ')
+      : '';
+
+  const getPlaceCardContent = (place: Place, type: PlaceType) => {
+    const badges: string[] = [];
+    let title = formatPlaceLabel(place, type);
+    let subtitle = '';
+
+    if (type === 'country') {
+      title = place.name;
+      if (place.country_code) badges.push(place.country_code);
+    } else if (type === 'state') {
+      title = place.name?.trim() || place.state_code || place.id.replace(/^state-[^-]+-/, '') || 'Unknown';
+      if (place.state_code && place.state_code !== title) badges.push(place.state_code);
+      if (place.country_code) subtitle = place.country_code;
+    } else if (type === 'city') {
+      title = place.name;
+      subtitle = [place.state_code, place.country_code].filter(Boolean).join(', ');
+    } else if (type === 'airport') {
+      title = place.name;
+      subtitle = place.location || place.search_location || [place.state_code, place.country_code].filter(Boolean).join(', ');
+      if (place.airport_code) badges.push(place.airport_code);
+    } else if (type === 'site') {
+      title = place.name;
+      subtitle = place.country_code || '';
+      const categoryLabel = formatSiteCategoryLabel(place.category);
+      if (categoryLabel) badges.push(categoryLabel);
+    }
+
+    return { title, subtitle, badges };
+  };
+
+  const formatLeaderboardValue = (categoryId: string, value: number | undefined) => {
+    if (value === undefined) return '--';
+    if (categoryId === 'miles') return `${Math.round(value).toLocaleString()} mi`;
+    if (categoryId === 'overall_score') return Math.round(value).toLocaleString();
+    return Math.round(value).toLocaleString();
   };
 
   const hemisphereTotals = {
@@ -1617,14 +2215,7 @@ function App() {
                 value={newProfileName}
                 onChange={(event) => setNewProfileName(event.target.value)}
               />
-              <label>
-                Color
-                <input
-                  type="color"
-                  value={newProfileColor}
-                  onChange={(event) => setNewProfileColor(normalizeHexColor(event.target.value))}
-                />
-              </label>
+              {renderProfileColorField(newProfileColor, setNewProfileColor)}
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -1657,14 +2248,7 @@ function App() {
                 value={newProfileName}
                 onChange={(event) => setNewProfileName(event.target.value)}
               />
-              <label>
-                Color
-                <input
-                  type="color"
-                  value={newProfileColor}
-                  onChange={(event) => setNewProfileColor(normalizeHexColor(event.target.value))}
-                />
-              </label>
+              {renderProfileColorField(newProfileColor, setNewProfileColor)}
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -1702,14 +2286,7 @@ function App() {
                 value={editProfileName}
                 onChange={(event) => setEditProfileName(event.target.value)}
               />
-              <label>
-                Color
-                <input
-                  type="color"
-                  value={selectedProfileColor}
-                  onChange={(event) => setSelectedProfileColor(normalizeHexColor(event.target.value))}
-                />
-              </label>
+              {renderProfileColorField(selectedProfileColor, setSelectedProfileColor)}
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -1782,6 +2359,9 @@ function App() {
               onChange={(event) => {
                 const value = event.target.value;
                 if (value === '__create__') {
+                  setNewProfileName('');
+                  setNewProfilePublic(false);
+                  setNewProfileColor(nextSuggestedProfileColor);
                   setShowCreateProfileModal(true);
                 } else if (!value) {
                   setProfileId(null);
@@ -1847,13 +2427,13 @@ function App() {
                 ? selectedProfile.is_public
                   ? 'Shared publicly'
                   : 'Private profile'
-                : 'Viewing public/demo atlas only'}
+                : 'Viewing the collective server atlas'}
             </small>
           </div>
           <div className="summary-card">
             <span>Owner</span>
-            <strong>{selectedProfile?.is_owned ? 'You' : selectedProfile ? 'Public view' : 'AtlasTracker demo'}</strong>
-            <small>{selectedProfile ? normalizeHexColor(selectedProfile.color) : 'No profile selected'}</small>
+            <strong>{selectedProfile?.is_owned ? 'You' : selectedProfile ? 'Public view' : 'Collective server'}</strong>
+            <small>{selectedProfile ? normalizeHexColor(selectedProfile.color) : 'Map colors reflect contributing profiles'}</small>
           </div>
         </div>
 
@@ -1872,8 +2452,18 @@ function App() {
           </div>
           <div className="stat-card">
             <span>Leaderboard</span>
-            <strong>{selectedProfile ? '#' : '--'}</strong>
-            <small>Coming soon</small>
+            <strong>
+              {stats?.leaderboard.current_profile?.eligible
+                ? `#${stats.leaderboard.current_profile.overall_rank ?? '--'}`
+                : '--'}
+            </strong>
+            <small>
+              {stats?.leaderboard.current_profile?.eligible
+                ? `${Math.round(stats.leaderboard.current_profile.overall_score).toLocaleString()} score`
+                : selectedProfile
+                  ? 'Set profile public to rank'
+                  : 'Public profiles only'}
+            </small>
           </div>
         </div>
       </header>
@@ -1933,21 +2523,17 @@ function App() {
                 <label className="scope-filter">
                   Scope
                   <select
-                    value={countryScope[activeTab]}
+                    value={listScope[activeTab]}
                     onChange={(event) =>
-                      setCountryScope((prev) => ({
+                      setListScope((prev) => ({
                         ...prev,
-                        [activeTab]: event.target.value as CountryScope,
+                        [activeTab]: event.target.value as ListScope,
                       }))
                     }
                   >
                     <option value="all">All</option>
-                    <option value="countries">Countries visited</option>
-                    {visitedCountryScopeOptions.map((country) => (
-                      <option key={country.code} value={`country:${country.code}`}>
-                        {country.label}
-                      </option>
-                    ))}
+                    <option value="visited">Visited</option>
+                    <option value="unvisited">Unvisited</option>
                   </select>
                 </label>
               )}
@@ -1963,48 +2549,94 @@ function App() {
                   </select>
                 </label>
               )}
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={visitedOnly[activeTab]}
-                  onChange={(event) =>
-                    setVisitedOnly((prev) => ({ ...prev, [activeTab]: event.target.checked }))
-                  }
-                />
-                Visited only
-              </label>
+              {activeTab !== 'state' && activeTab !== 'city' && (
+                <label className="scope-filter">
+                  Scope
+                  <select
+                    value={listScope[activeTab]}
+                    onChange={(event) =>
+                      setListScope((prev) => ({
+                        ...prev,
+                        [activeTab]: event.target.value as ListScope,
+                      }))
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="visited">Visited</option>
+                    <option value="unvisited">Unvisited</option>
+                  </select>
+                </label>
+              )}
+              {(activeTab === 'state' || activeTab === 'city') && visitedCountryScopeOptions.length > 0 && (
+                <div className="visited-country-filter">
+                  <div className="visited-country-filter__header">
+                    <span>Visited countries</span>
+                    {selectedVisitedCountries[activeTab].length > 0 && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() =>
+                          setSelectedVisitedCountries((prev) => ({
+                            ...prev,
+                            [activeTab]: [],
+                          }))
+                        }
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="visited-country-filter__list">
+                    {visitedCountryScopeOptions.map((country) => (
+                      <label key={country.code} className="visited-country-option">
+                        <input
+                          type="checkbox"
+                          checked={selectedVisitedCountries[activeTab].includes(country.code)}
+                          onChange={() => onToggleVisitedCountrySelection(activeTab, country.code)}
+                        />
+                        <span>{country.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <ul className="list">
-              {activeTab === 'airport' && (
-                <li className="list-header">
-                  <span>MAJOR AIRPORT</span>
-                  <span>AIRPORT CODE</span>
-                </li>
-              )}
               {visiblePlaces.map((place) => (
-                <li key={place.id}>
-                  <label>
+                <li key={place.id} className={`place-card place-card--${activeTab}${visitedIds.has(place.id) ? ' place-card--visited' : ''}`}>
+                  <label className="place-card__label">
                     <input
                       type="checkbox"
                       checked={visitedIds.has(place.id)}
                       disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
                       onChange={() => onToggleVisit(place)}
                     />
-                    {activeTab === 'airport' ? (
-                      <span className="place-name airport-name" onClick={() => focusOnPlace(place)}>
-                        <strong>{place.name}</strong>
-                        <small>{place.location || [place.country_code].filter(Boolean).join(', ')}</small>
-                      </span>
-                    ) : (
-                      <span className="place-name" onClick={() => focusOnPlace(place)}>
-                        {formatPlaceLabel(place, activeTab)}
-                      </span>
-                    )}
-                    {activeTab === 'airport' && <span className="airport-code">{place.airport_code}</span>}
-                    {activeTab !== 'city' && activeTab !== 'state' && activeTab !== 'airport' && place.country_code && (
-                      <span>{place.country_code}</span>
-                    )}
+                    {(() => {
+                      const { title, subtitle, badges } = getPlaceCardContent(place, activeTab);
+                      return (
+                        <span className="place-card__body">
+                          <span className="place-card__topline">
+                            <span className={`place-name place-card__title${activeTab === 'airport' ? ' airport-name' : ''}`} onClick={() => focusOnPlace(place)}>
+                              {title}
+                            </span>
+                            {badges.length > 0 && (
+                              <span className="place-card__badges" aria-hidden="true">
+                                {badges.map((badge) => (
+                                  <span
+                                    key={`${place.id}-${badge}`}
+                                    className={`place-card__badge${activeTab === 'airport' ? ' airport-code' : ''}`}
+                                  >
+                                    {badge}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </span>
+                          {subtitle && <span className="place-card__subtitle">{subtitle}</span>}
+                        </span>
+                      );
+                    })()}
                   </label>
                 </li>
               ))}
@@ -2239,12 +2871,17 @@ function App() {
             <div className="detail-panel">
               <div className="panel-header">
                 <div>
-                  <h3>Detailed Stats</h3>
-                  <p>Flight mileage and place-visit depth in one view.</p>
+                  <h3>Stats</h3>
+                  <p>Measured travel records and dataset coverage from reported visits and trips.</p>
                 </div>
               </div>
 
               <div className="stats-grid">
+                <div className="stat-card">
+                  <span>Overall score</span>
+                  <strong>{Math.round(stats?.scorecard.overall_score ?? 0).toLocaleString()}</strong>
+                  <small>{Math.round(stats?.scorecard.achievement_score ?? 0).toLocaleString()} achievement points</small>
+                </div>
                 <div className="stat-card hemisphere-card">
                   <span>Hemisphere Coverage</span>
                   <div className="hemisphere-wheel-wrap">
@@ -2371,6 +3008,19 @@ function App() {
                   <strong>{stats?.geo_extremes.highest_elevation?.name ?? 'N/A'}</strong>
                   <small>{Math.round(stats?.geo_extremes.highest_elevation?.elevation_m ?? 0)} m</small>
                 </div>
+                <div className="stat-card">
+                  <span>Lowest Elevation</span>
+                  <strong>{stats?.geo_extremes.lowest_elevation?.name ?? 'N/A'}</strong>
+                  <small>{Math.round(stats?.geo_extremes.lowest_elevation?.elevation_m ?? 0)} m</small>
+                </div>
+                {stats?.measurements.map((measurement) => (
+                  <div className="stat-card" key={measurement.id}>
+                    <span>{measurement.label}</span>
+                    <strong>{measurement.place_name}</strong>
+                    <small>{measurement.display_value}</small>
+                    {measurement.detail && <small>{measurement.detail}</small>}
+                  </div>
+                ))}
                 {Object.entries(stats?.site_categories ?? {}).map(([category, values]) => (
                   <div className="stat-card" key={category}>
                     <span>{category.replaceAll('_', ' ')}</span>
@@ -2388,18 +3038,59 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h3>Achievements</h3>
-                  <p>Badges and milestone tracking are not wired yet.</p>
+                  <p>Milestones earned by what this profile has actually done.</p>
                 </div>
               </div>
+
               <div className="stats-grid">
                 <div className="stat-card">
-                  <span>Explorer Rank</span>
-                  <strong>Coming soon</strong>
+                  <span>Earned</span>
+                  <strong>
+                    {stats?.achievements.earned ?? 0} / {stats?.achievements.total ?? 0}
+                  </strong>
+                  <small>{Math.round(stats?.achievements.score ?? 0)} points</small>
                 </div>
                 <div className="stat-card">
-                  <span>Milestones</span>
-                  <strong>Pending</strong>
+                  <span>Leaderboard rank</span>
+                  <strong>
+                    {stats?.leaderboard.current_profile?.eligible
+                      ? `#${stats.leaderboard.current_profile.achievement_rank ?? '--'}`
+                      : '--'}
+                  </strong>
+                  <small>
+                    {stats?.leaderboard.current_profile?.eligible ? 'Among public profiles' : 'Private or demo view'}
+                  </small>
                 </div>
+              </div>
+
+              <div className="achievement-grid">
+                {(stats?.achievements.items ?? []).map((achievement) => (
+                  <article
+                    key={achievement.id}
+                    className={`achievement-card ${achievement.earned ? 'achievement-card--earned' : ''}`}
+                  >
+                    <div className="achievement-card__header">
+                      <div>
+                        <span>{achievement.category}</span>
+                        <h4>{achievement.title}</h4>
+                      </div>
+                      <strong>{achievement.points} pts</strong>
+                    </div>
+                    <p>{achievement.description}</p>
+                    <div className="achievement-progress">
+                      <div
+                        className="achievement-progress__bar"
+                        style={{ width: `${achievement.progress_percent}%` }}
+                      />
+                    </div>
+                    <small>{achievement.progress_label}</small>
+                    <small>
+                      {achievement.earned
+                        ? 'Earned'
+                        : `Rarity: ${achievement.rarity_percent ?? 0}% of public profiles`}
+                    </small>
+                  </article>
+                ))}
               </div>
             </div>
           )}
@@ -2409,18 +3100,92 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h3>Leaderboard</h3>
-                  <p>Shared profile ranking and comparison are planned next.</p>
+                  <p>Public profile standings based on coverage, travel, and earned achievements.</p>
                 </div>
               </div>
+
               <div className="stats-grid">
                 <div className="stat-card">
                   <span>Your position</span>
-                  <strong>{selectedProfile ? 'TBD' : '--'}</strong>
+                  <strong>
+                    {stats?.leaderboard.current_profile?.eligible
+                      ? `#${stats.leaderboard.current_profile.overall_rank ?? '--'}`
+                      : '--'}
+                  </strong>
+                  <small>
+                    {stats?.leaderboard.current_profile?.leader_categories?.length
+                      ? `Leading: ${stats.leaderboard.current_profile.leader_categories.join(', ')}`
+                      : stats?.leaderboard.current_profile?.eligible
+                        ? 'No category leads yet'
+                        : 'Only public profiles rank'}
+                  </small>
                 </div>
                 <div className="stat-card">
                   <span>Public profiles</span>
-                  <strong>{publicProfiles.length}</strong>
+                  <strong>{stats?.leaderboard.public_profile_count ?? 0}</strong>
                 </div>
+                <div className="stat-card">
+                  <span>Country rank</span>
+                  <strong>
+                    {stats?.leaderboard.current_profile?.eligible
+                      ? `#${stats.leaderboard.current_profile.country_rank ?? '--'}`
+                      : '--'}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span>Achievement rank</span>
+                  <strong>
+                    {stats?.leaderboard.current_profile?.eligible
+                      ? `#${stats.leaderboard.current_profile.achievement_rank ?? '--'}`
+                      : '--'}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="leaderboard-grid">
+                <section className="leaderboard-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Overall</h3>
+                      <p>Weighted score across coverage, travel, and achievements.</p>
+                    </div>
+                  </div>
+                  <div className="leaderboard-list">
+                    {(stats?.leaderboard.top_overall ?? []).map((entry, index) => (
+                      <div key={entry.profile_id} className="leaderboard-row">
+                        <span className="leaderboard-rank">#{index + 1}</span>
+                        <div>
+                          <strong>{entry.name}</strong>
+                          <small>
+                            {entry.countries ?? 0} countries | {Math.round(entry.miles ?? 0).toLocaleString()} mi |{' '}
+                            {entry.achievements ?? 0} achievements
+                          </small>
+                        </div>
+                        <span>{Math.round(entry.overall_score ?? 0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {(stats?.leaderboard.categories ?? []).map((category) => (
+                  <section className="leaderboard-panel" key={category.id}>
+                    <div className="panel-header">
+                      <div>
+                        <h3>{category.label}</h3>
+                        <p>Current public leaders in this category.</p>
+                      </div>
+                    </div>
+                    <div className="leaderboard-list">
+                      {category.leaders.map((entry, index) => (
+                        <div key={`${category.id}-${entry.profile_id}`} className="leaderboard-row">
+                          <span className="leaderboard-rank">#{index + 1}</span>
+                          <strong>{entry.name}</strong>
+                          <span>{formatLeaderboardValue(category.id, entry.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ))}
               </div>
             </div>
           )}
@@ -2534,10 +3299,7 @@ function App() {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Color
-                    <input type="color" value={newAdminProfileColor} onChange={(event) => setNewAdminProfileColor(event.target.value)} />
-                  </label>
+                  {renderProfileColorField(newAdminProfileColor, setNewAdminProfileColor)}
                   <label className="toggle">
                     <input type="checkbox" checked={newAdminProfilePublic} onChange={(event) => setNewAdminProfilePublic(event.target.checked)} />
                     Public profile
