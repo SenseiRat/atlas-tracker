@@ -682,7 +682,6 @@ function App() {
 
   const [isMapReady, setIsMapReady] = useState(false);
   const [uiError, setUiError] = useState<string | null>(null);
-  const [mapStatus, setMapStatus] = useState('Map idle');
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1085,7 +1084,6 @@ function App() {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    setMapStatus('Creating map');
     let map: MapLibreMap;
     try {
       map = new maplibregl.Map({
@@ -1097,7 +1095,6 @@ function App() {
         minZoom: 1,
       });
     } catch (error) {
-      setMapStatus('Map constructor failed');
       setUiError('Map failed to initialize.');
       console.error(error);
       return;
@@ -1110,7 +1107,6 @@ function App() {
     const initMapLayers = async () => {
       if (didInitLayers) return;
       didInitLayers = true;
-      setMapStatus('Style ready, loading overlays');
       try {
         const theme = mapThemeTokens[themeMode];
         const [countryResult, stateResult] = await Promise.allSettled([
@@ -1269,32 +1265,23 @@ function App() {
         });
 
         setIsMapReady(true);
-        setMapStatus(`Map ready: countries=${countryGeo.features.length}, states=${stateGeo.features.length}`);
         window.setTimeout(() => map.resize(), 0);
       } catch (error) {
         didInitLayers = false;
-        setMapStatus('Overlay load failed');
         setUiError('Map layers failed to load.');
         console.error(error);
       }
     };
 
-    map.on('styledata', () => {
-      setMapStatus(`Style data event: loaded=${String(map.isStyleLoaded())}`);
-    });
-
     map.on('load', () => {
-      setMapStatus('Map loaded, loading overlays');
       void initMapLayers();
     });
 
     map.on('error', (event) => {
-      setMapStatus(`Map error: ${event.error?.message ?? 'unknown error'}`);
       console.error('MapLibre error', event.error);
     });
 
     if (map.loaded()) {
-      setMapStatus('Map already loaded, loading overlays');
       void initMapLayers();
     }
 
@@ -1361,7 +1348,6 @@ function App() {
         !countryGeoRef.current ||
         !stateGeoRef.current
       ) {
-        setMapStatus('Overlay sync skipped: map sources not ready');
         return;
       }
 
@@ -1565,11 +1551,7 @@ function App() {
 
       routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
       map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
-      setMapStatus(
-        `Overlay sync: profile=${String(profileId)} visits=${activeVisits.length} countries=${countryColorById.size} points=${pointFeatures.length} states=${stateFeatures.length} routes=${routeFeatures.length}`,
-      );
     })().catch((error) => {
-      setMapStatus('Overlay sync failed');
       console.error(error);
     });
   }, [places, visits, tripLogs, profileId, profileVisualsById, isMapReady, selectedMapPlaceId, showTripRoutes, themeMode]);
@@ -2701,8 +2683,6 @@ function App() {
               </label>
             </div>
           )}
-
-          {mainView === 'map' && <div className="map-debug">{mapStatus}</div>}
 
           <div ref={mapContainerRef} className={`map ${mainView === 'map' ? '' : 'map-hidden'}`} />
 
