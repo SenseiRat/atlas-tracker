@@ -240,12 +240,12 @@ const emptyFeatureCollection = (): MapFeatureCollection => ({
   features: [],
 });
 
-const tabs: { type: PlaceType; label: string; helper: string }[] = [
-  { type: 'country', label: 'Countries', helper: 'Track country coverage.' },
-  { type: 'state', label: 'States / Regions', helper: 'Filter by visited countries.' },
-  { type: 'city', label: 'Major Cities', helper: 'Curated fast list.' },
-  { type: 'airport', label: 'Major Airports', helper: 'Use these for trip logs too.' },
-  { type: 'site', label: 'Sites & Lists', helper: 'UNESCO, parks, wonders, and food/drink lists.' },
+const tabs: { type: PlaceType; label: string }[] = [
+  { type: 'country', label: 'Countries' },
+  { type: 'state', label: 'States / Regions' },
+  { type: 'city', label: 'Major Cities' },
+  { type: 'airport', label: 'Major Airports' },
+  { type: 'site', label: 'Sites & Lists' },
 ];
 
 const profilePalette = [
@@ -3229,7 +3229,6 @@ function App() {
           <div className="tab-panel">
             <div className="tab-meta">
               <h2>{tabs.find((tab) => tab.type === activeTab)?.label}</h2>
-              <p>{tabs.find((tab) => tab.type === activeTab)?.helper}</p>
             </div>
 
             <div className="filters">
