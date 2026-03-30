@@ -494,6 +494,11 @@ def extract_airport_code(item: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def is_duplicate_airport_record(item: Dict[str, Any]) -> bool:
+    name = str(item.get("name") or "").strip().lower()
+    return name.startswith("(duplicate)")
+
+
 def normalize_profile_color(raw: Any) -> str:
     color = str(raw or "").strip()
     if HEX_COLOR_RE.match(color):
@@ -858,6 +863,8 @@ def _collect_airport_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[t
     iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
 
     for airport in payload:
+        if is_duplicate_airport_record(airport):
+            continue
         name = airport.get("name") or airport.get("municipality") or "Unknown airport"
         country_code = normalize_country_code(airport.get("country_code") or airport.get("iso_country"), iso2_to_iso3)
         state_code = extract_state_code(airport)
@@ -2665,11 +2672,14 @@ async def get_places(
                         data = json.loads(item.get("data") or "{}")
                     except json.JSONDecodeError:
                         data = {}
+                    if is_duplicate_airport_record(data):
+                        continue
                     state_code = extract_state_code(data)
                     item["state_code"] = state_code
                     item["category"] = str(data.get("category") or "").strip() or None
                     item["airport_code"] = extract_airport_code(data)
                     municipality = str(data.get("municipality") or data.get("city") or "").strip()
+                    item["municipality"] = municipality or None
                     country_text = str(item.get("country_code") or "").strip()
                     location_parts = [part for part in [municipality, state_code, country_text] if part]
                     item["location"] = ", ".join(location_parts)
@@ -2703,11 +2713,14 @@ async def get_places(
                     data = json.loads(item.get("data") or "{}")
                 except json.JSONDecodeError:
                     data = {}
+                if type == "airport" and is_duplicate_airport_record(data):
+                    continue
                 state_code = extract_state_code(data)
                 item["state_code"] = state_code
                 item["category"] = str(data.get("category") or "").strip() or None
                 item["airport_code"] = extract_airport_code(data)
                 municipality = str(data.get("municipality") or data.get("city") or "").strip()
+                item["municipality"] = municipality or None
                 country_text = str(item.get("country_code") or "").strip()
                 location_parts = [part for part in [municipality, state_code, country_text] if part]
                 item["location"] = ", ".join(location_parts)

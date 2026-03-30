@@ -11,6 +11,7 @@ type Place = {
   name: string;
   country_code?: string;
   state_code?: string;
+  municipality?: string;
   lat?: number;
   lon?: number;
   airport_code?: string;
@@ -980,6 +981,31 @@ function App() {
       .sort((a, b) => a.label.localeCompare(b.label));
     return options;
   }, [places.country, visitedCountryCodes]);
+
+  const countryNameByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    places.country.forEach((country) => {
+      const code = (country.country_code || '').trim().toUpperCase();
+      const name = country.name?.trim();
+      if (code && name) {
+        map.set(code, name);
+      }
+    });
+    return map;
+  }, [places.country]);
+
+  const stateNameByCountryAndCode = useMemo(() => {
+    const map = new Map<string, string>();
+    places.state.forEach((state) => {
+      const countryCode = (state.country_code || '').trim().toUpperCase();
+      const stateCode = (state.state_code || '').trim().toUpperCase();
+      const stateName = state.name?.trim();
+      if (countryCode && stateCode && stateName) {
+        map.set(`${countryCode}:${stateCode}`, stateName);
+      }
+    });
+    return map;
+  }, [places.state]);
 
   useEffect(() => {
     localStorage.setItem('tracker-theme', themeMode);
@@ -2059,15 +2085,17 @@ function App() {
   };
 
   const formatPlaceLabel = (place: Place, type: PlaceType) => {
+    const countryName = place.country_code ? countryNameByCode.get(place.country_code.toUpperCase()) ?? place.country_code : '';
+    const regionName = getRegionName(place);
     if (type === 'state') {
       const stateName = place.name?.trim() || place.state_code || place.id.replace(/^state-[^-]+-/, '') || 'Unknown';
-      if (place.country_code) return `${stateName}, ${place.country_code}`;
+      if (countryName) return `${stateName}, ${countryName}`;
       return stateName;
     }
     if (type === 'city') {
       const parts = [place.name];
-      if (place.state_code) parts.push(place.state_code);
-      if (place.country_code) parts.push(place.country_code);
+      if (regionName) parts.push(regionName);
+      if (countryName) parts.push(countryName);
       return parts.join(', ');
     }
     if (type === 'airport') {
@@ -2086,28 +2114,46 @@ function App() {
           .join(' ')
       : '';
 
+  const formatRegionLabel = (value?: string) => {
+    const label = (value || '').trim();
+    return label && !/^\d+$/.test(label) ? label : '';
+  };
+
+  const getRegionName = (place: Place) => {
+    const stateCode = (place.state_code || '').trim();
+    const countryCode = (place.country_code || '').trim().toUpperCase();
+    if (countryCode && stateCode) {
+      const resolved = stateNameByCountryAndCode.get(`${countryCode}:${stateCode.toUpperCase()}`);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return formatRegionLabel(stateCode);
+  };
+
   const getPlaceCardContent = (place: Place, type: PlaceType) => {
     const badges: string[] = [];
     let title = formatPlaceLabel(place, type);
     let subtitle = '';
+    const countryName = place.country_code ? countryNameByCode.get(place.country_code.toUpperCase()) ?? place.country_code : '';
+    const regionLabel = getRegionName(place);
 
     if (type === 'country') {
       title = place.name;
       if (place.country_code) badges.push(place.country_code);
     } else if (type === 'state') {
       title = place.name?.trim() || place.state_code || place.id.replace(/^state-[^-]+-/, '') || 'Unknown';
-      if (place.state_code && place.state_code !== title) badges.push(place.state_code);
-      if (place.country_code) subtitle = place.country_code;
+      if (regionLabel && regionLabel !== title) badges.push(regionLabel);
+      if (countryName) subtitle = countryName;
     } else if (type === 'city') {
-      title = place.name;
-      subtitle = [place.state_code, place.country_code].filter(Boolean).join(', ');
+      title = [place.name, regionLabel, countryName].filter(Boolean).join(', ');
     } else if (type === 'airport') {
       title = place.name;
-      subtitle = place.location || place.search_location || [place.state_code, place.country_code].filter(Boolean).join(', ');
+      subtitle = [place.municipality, regionLabel, countryName].filter(Boolean).join(', ') || place.location || '';
       if (place.airport_code) badges.push(place.airport_code);
     } else if (type === 'site') {
       title = place.name;
-      subtitle = place.country_code || '';
+      subtitle = countryName || '';
       const categoryLabel = formatSiteCategoryLabel(place.category);
       if (categoryLabel) badges.push(categoryLabel);
     }
@@ -3303,7 +3349,7 @@ function App() {
             <ul className="list">
               {visiblePlaces.map((place) => (
                 <li key={place.id} className={`place-card place-card--${activeTab}${visitedIds.has(place.id) ? ' place-card--visited' : ''}`}>
-                  <label className="place-card__label">
+                  <label className={`place-card__label${activeTab === 'city' ? ' place-card__label--compact' : ''}`}>
                     <input
                       type="checkbox"
                       checked={visitedIds.has(place.id)}

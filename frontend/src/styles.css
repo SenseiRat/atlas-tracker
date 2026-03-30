@@ -772,6 +772,11 @@ body {
   cursor: pointer;
 }
 
+.place-card__label--compact {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
 .place-card__label input {
   margin: 3px 0 0;
 }
