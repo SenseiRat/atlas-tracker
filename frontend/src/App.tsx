@@ -21,9 +21,11 @@ type Place = {
 
 type PlacesResponse = {
   items: Place[];
-  total: number;
+  total?: number | null;
   limit: number;
   offset: number;
+  has_more?: boolean;
+  next_offset?: number;
 };
 
 type Visit = {
@@ -1108,17 +1110,17 @@ function App() {
       };
       const pageSize = pageSizeByType[tab.type];
       let offset = 0;
-      let total = Number.POSITIVE_INFINITY;
+      let hasMore = true;
       const allItems: Place[] = [];
 
-      while (offset < total) {
+      while (hasMore) {
         const response = await api<PlacesResponse>(
-          `/api/places?type=${tab.type}&limit=${pageSize}&offset=${offset}${airportParam}`,
+          `/api/places?type=${tab.type}&limit=${pageSize}&offset=${offset}&include_total=false${airportParam}`,
         );
         allItems.push(...response.items);
-        total = response.total;
         if (response.items.length === 0) break;
-        offset += response.items.length;
+        offset = typeof response.next_offset === 'number' ? response.next_offset : offset + response.items.length;
+        hasMore = Boolean(response.has_more);
       }
 
       return allItems;

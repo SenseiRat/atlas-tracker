@@ -98,7 +98,7 @@ pip install -r server/requirements.txt
 
 ## Data sources
 
-The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately. On first run, the server imports these files into the database. After that, it polls `data_sources/` on a configurable interval and applies differential upserts/deletes automatically.
+The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately. On first run, the server imports these files into the database. After that, it treats `data_sources/` as read-only input and polls for file changes on a configurable interval, applying differential upserts/deletes to the database automatically.
 
 - `countries.geojson`: simplified placeholder polygons.
 - `cities.json`: curated major cities.
@@ -195,7 +195,7 @@ The default poll interval is hourly (`DATA_SYNC_INTERVAL_SECONDS=3600`). Set it 
 
 ## Seeding
 
-The database imports from `data_sources/` automatically on first start and then keeps syncing those files. You can still force a one-off sync with:
+The database imports from `data_sources/` automatically on first start and then keeps syncing those files. The application only reads those files; it does not rewrite them. You can still force a one-off sync with:
 
 ```bash
 python scripts/seed_db.py
@@ -204,12 +204,12 @@ python scripts/seed_db.py
 ## Data Refresh Automation
 
 - In-app polling:
-  - Watches the repo-backed files in `data_sources/`.
+  - Watches the repo-backed files in `data_sources/` in read-only mode.
   - Upserts changed/new places and removes retired places only when they are not referenced by visits or trip logs.
+  - Automatically updates `countries`, `state_regions`, `cities`, and `airports`.
+  - Leaves `sites` in seed/manual-sync mode for now.
   - Controlled by:
     - `DATA_SYNC_INTERVAL_SECONDS` (default `3600`)
-    - `DATA_SYNC_EXTERNAL_REFRESH_ENABLED` (default `0`)
-    - `DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS` (default `86400`)
 - `python3 scripts/refresh_external_sources.py`
   - Refreshes:
     - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).
@@ -226,8 +226,6 @@ After refresh, the running app will detect the changed files on the next poll an
 ```bash
 python3 scripts/seed_db.py
 ```
-
-If you want the server to run the refresh scripts itself, enable `DATA_SYNC_EXTERNAL_REFRESH_ENABLED=1`. It will run those scripts on the configured external refresh interval before syncing the local files back into the database.
 
 # Planned Features
 - TODO: Implement profile visibility settings (private/shared).

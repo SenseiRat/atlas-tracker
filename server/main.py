@@ -9,8 +9,6 @@ import os
 import re
 import secrets
 import sqlite3
-import subprocess
-import sys
 import threading
 import time
 import urllib.parse
@@ -18,14 +16,13 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-APP_ROOT = Path(__file__).resolve().parents[1]
 DB_HOST = os.environ.get("DB_HOST", "").strip()
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ.get("DB_NAME", "").strip()
@@ -53,18 +50,14 @@ OIDC_COOKIE_SECURE = os.environ.get("OIDC_COOKIE_SECURE", "0").strip().lower() i
 LOCAL_USER_COOKIE = os.environ.get("LOCAL_USER_COOKIE", "world_tracker_local_user").strip() or "world_tracker_local_user"
 PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "260000"))
 DATA_SYNC_INTERVAL_SECONDS = max(int(os.environ.get("DATA_SYNC_INTERVAL_SECONDS", "3600")), 0)
-DATA_SYNC_EXTERNAL_REFRESH_ENABLED = os.environ.get("DATA_SYNC_EXTERNAL_REFRESH_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
-DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS = max(
-    int(os.environ.get("DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS", str(24 * 60 * 60))),
-    0,
-)
+SourceCollector = Callable[[Any, Dict[str, Any]], Tuple[List[tuple], Dict[str, Tuple[str, str]]]]
 
-SOURCE_DATASET_FILES = {
-    "countries": "countries.geojson",
-    "state_regions": "state_regions.geojson",
-    "cities": "cities.json",
-    "airports": "airports.json",
-    "sites": "sites.json",
+SOURCE_DATASET_DEFINITIONS = {
+    "countries": {"filename": "countries.geojson", "required": True, "auto_sync": True},
+    "state_regions": {"filename": "state_regions.geojson", "required": False, "auto_sync": True},
+    "cities": {"filename": "cities.json", "required": True, "auto_sync": True},
+    "airports": {"filename": "airports.json", "required": True, "auto_sync": True},
+    "sites": {"filename": "sites.json", "required": True, "auto_sync": False},
 }
 
 app = FastAPI(title="World Visited Tracker")
@@ -189,6 +182,14 @@ SQLITE_SCHEMA_STATEMENTS = [
     """,
 ]
 
+SQLITE_INDEX_STATEMENTS = [
+    "CREATE INDEX IF NOT EXISTS idx_places_type_name_id ON places (type, name, id)",
+    "CREATE INDEX IF NOT EXISTS idx_places_type_country_name_id ON places (type, country_code, name, id)",
+    "CREATE INDEX IF NOT EXISTS idx_visits_profile_id ON visits (profile_id)",
+    "CREATE INDEX IF NOT EXISTS idx_visits_place_id ON visits (place_id)",
+    "CREATE INDEX IF NOT EXISTS idx_trip_logs_profile_id ON trip_logs (profile_id)",
+]
+
 POSTGRES_SCHEMA_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS users (
@@ -268,6 +269,14 @@ POSTGRES_SCHEMA_STATEMENTS = [
         last_seen_at TEXT NOT NULL
     )
     """,
+]
+
+POSTGRES_INDEX_STATEMENTS = [
+    "CREATE INDEX IF NOT EXISTS idx_places_type_name_id ON places (type, name, id)",
+    "CREATE INDEX IF NOT EXISTS idx_places_type_country_name_id ON places (type, country_code, name, id)",
+    "CREATE INDEX IF NOT EXISTS idx_visits_profile_id ON visits (profile_id)",
+    "CREATE INDEX IF NOT EXISTS idx_visits_place_id ON visits (place_id)",
+    "CREATE INDEX IF NOT EXISTS idx_trip_logs_profile_id ON trip_logs (profile_id)",
 ]
 
 
@@ -372,7 +381,10 @@ def init_db() -> None:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
         schema_statements = POSTGRES_SCHEMA_STATEMENTS if DB_BACKEND == "postgres" else SQLITE_SCHEMA_STATEMENTS
+        index_statements = POSTGRES_INDEX_STATEMENTS if DB_BACKEND == "postgres" else SQLITE_INDEX_STATEMENTS
         for statement in schema_statements:
+            conn.execute(statement)
+        for statement in index_statements:
             conn.execute(statement)
 
         if DB_BACKEND == "postgres":
@@ -702,27 +714,34 @@ def _path_digest(path: Path) -> str:
 
 def _compute_source_digests() -> Dict[str, str]:
     digests: Dict[str, str] = {}
-    for source_key, filename in SOURCE_DATASET_FILES.items():
-        path = DATA_SOURCES_DIR / filename
+    for source_key, config in SOURCE_DATASET_DEFINITIONS.items():
+        path = DATA_SOURCES_DIR / str(config["filename"])
         if path.exists():
             digests[source_key] = _path_digest(path)
     return digests
 
 
-def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
-    countries = load_json(DATA_SOURCES_DIR / "countries.geojson")
-    cities = load_json(DATA_SOURCES_DIR / "cities.json")
-    airports = load_json(DATA_SOURCES_DIR / "airports.json")
-    sites = load_json(DATA_SOURCES_DIR / "sites.json")
-    state_regions_path = DATA_SOURCES_DIR / "state_regions.geojson"
-    state_regions = load_json(state_regions_path) if state_regions_path.exists() else {"features": []}
+def _load_source_payloads(source_keys: Optional[Set[str]] = None) -> Dict[str, Any]:
+    payloads: Dict[str, Any] = {}
+    for source_key, config in SOURCE_DATASET_DEFINITIONS.items():
+        if source_keys is not None and source_key not in source_keys:
+            continue
+        path = DATA_SOURCES_DIR / str(config["filename"])
+        if path.exists():
+            payloads[source_key] = load_json(path)
+            continue
+        if bool(config.get("required")):
+            raise FileNotFoundError(f"Required data source missing: {path}")
+        payloads[source_key] = {"features": []}
+    return payloads
 
+
+def _collect_country_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
     rows: List[tuple] = []
     source_state: Dict[str, Tuple[str, str]] = {}
-    iso2_to_iso3: Dict[str, str] = {}
-    state_rows: Dict[Tuple[str, str], Tuple[str, str, str, Optional[float], Optional[float], str]] = {}
+    iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
 
-    for feature in countries.get("features", []):
+    for feature in payload.get("features", []):
         props = feature.get("properties", {})
         country_code = str(props.get("ADM0_A3") or props.get("ISO_A3") or props.get("NAME") or "").upper()
         iso2 = str(props.get("ISO_A2") or "").upper()
@@ -742,8 +761,16 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("countries", hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest())
+    return rows, source_state
 
-    for feature in state_regions.get("features", []):
+
+def _collect_state_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
+    rows: List[tuple] = []
+    source_state: Dict[str, Tuple[str, str]] = {}
+    iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+    state_rows: Dict[Tuple[str, str], Tuple[str, str, str, Optional[float], Optional[float], str]] = {}
+
+    for feature in payload.get("features", []):
         props = feature.get("properties", {})
         country_code = normalize_country_code(
             props.get("country_code")
@@ -782,8 +809,18 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
                 }
             ),
         )
+    for state_row in state_rows.values():
+        rows.append(state_row)
+        source_state[state_row[0]] = ("state_regions", hashlib.sha256(state_row[6].encode("utf-8")).hexdigest())
+    return rows, source_state
 
-    for city in cities:
+
+def _collect_city_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
+    rows: List[tuple] = []
+    source_state: Dict[str, Tuple[str, str]] = {}
+    iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+
+    for city in payload:
         name = city.get("name") or city.get("asciiname") or "Unknown city"
         country_code = normalize_country_code(city.get("country_code") or city.get("iso_country"), iso2_to_iso3)
         state_code = extract_state_code(city)
@@ -812,8 +849,15 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("cities", hashlib.sha256(json.dumps(city_payload, sort_keys=True).encode("utf-8")).hexdigest())
+    return rows, source_state
 
-    for airport in airports:
+
+def _collect_airport_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
+    rows: List[tuple] = []
+    source_state: Dict[str, Tuple[str, str]] = {}
+    iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+
+    for airport in payload:
         name = airport.get("name") or airport.get("municipality") or "Unknown airport"
         country_code = normalize_country_code(airport.get("country_code") or airport.get("iso_country"), iso2_to_iso3)
         state_code = extract_state_code(airport)
@@ -842,8 +886,15 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("airports", hashlib.sha256(json.dumps(airport_payload, sort_keys=True).encode("utf-8")).hexdigest())
+    return rows, source_state
 
-    for site in sites:
+
+def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
+    rows: List[tuple] = []
+    source_state: Dict[str, Tuple[str, str]] = {}
+    iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+
+    for site in payload:
         name = site.get("name") or "Unknown site"
         country_code = normalize_country_code(site.get("country_code") or site.get("iso_country"), iso2_to_iso3)
         state_code = extract_state_code(site)
@@ -872,11 +923,30 @@ def _collect_places_from_sources() -> Tuple[List[tuple], Dict[str, Tuple[str, st
             )
         )
         source_state[place_id] = ("sites", hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest())
+    return rows, source_state
 
-    for state_row in state_rows.values():
-        rows.append(state_row)
-        source_state[state_row[0]] = ("state_regions", hashlib.sha256(state_row[6].encode("utf-8")).hexdigest())
 
+SOURCE_COLLECTORS: Dict[str, SourceCollector] = {
+    "countries": _collect_country_rows,
+    "state_regions": _collect_state_rows,
+    "cities": _collect_city_rows,
+    "airports": _collect_airport_rows,
+    "sites": _collect_site_rows,
+}
+
+
+def _collect_places_from_sources(source_keys: Optional[Set[str]] = None) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
+    payloads = _load_source_payloads(source_keys)
+    rows: List[tuple] = []
+    source_state: Dict[str, Tuple[str, str]] = {}
+    context: Dict[str, Any] = {"iso2_to_iso3": {}}
+
+    for source_key in SOURCE_DATASET_DEFINITIONS:
+        if source_key not in payloads:
+            continue
+        collector_rows, collector_state = SOURCE_COLLECTORS[source_key](payloads[source_key], context)
+        rows.extend(collector_rows)
+        source_state.update(collector_state)
     return rows, source_state
 
 
@@ -900,8 +970,15 @@ def _delete_removed_source_places(
     conn: DBConnection,
     expected_by_source: Dict[str, Set[str]],
     now: str,
+    source_keys: Set[str],
 ) -> None:
-    rows = conn.execute("SELECT place_id, source_key, is_active FROM place_source_state").fetchall()
+    if not source_keys:
+        return
+    placeholders = ",".join("?" for _ in source_keys)
+    rows = conn.execute(
+        f"SELECT place_id, source_key, is_active FROM place_source_state WHERE source_key IN ({placeholders})",
+        sorted(source_keys),
+    ).fetchall()
     for row in rows:
         place_id = str(row["place_id"])
         source_key = str(row["source_key"])
@@ -921,24 +998,26 @@ def _delete_removed_source_places(
         conn.execute("DELETE FROM places WHERE id = ?", (place_id,))
 
 
-def sync_places_from_data_sources(conn: DBConnection) -> Dict[str, Any]:
-    rows, source_state = _collect_places_from_sources()
+def sync_places_from_data_sources(conn: DBConnection, source_keys: Optional[Set[str]] = None) -> Dict[str, Any]:
+    target_source_keys = source_keys or set(SOURCE_DATASET_DEFINITIONS.keys())
+    rows, source_state = _collect_places_from_sources(target_source_keys)
     now = current_timestamp()
 
-    conn.executemany(
-        """
-        INSERT INTO places (id, type, name, country_code, lat, lon, data)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            type = excluded.type,
-            name = excluded.name,
-            country_code = excluded.country_code,
-            lat = excluded.lat,
-            lon = excluded.lon,
-            data = excluded.data
-        """,
-        rows,
-    )
+    if rows:
+        conn.executemany(
+            """
+            INSERT INTO places (id, type, name, country_code, lat, lon, data)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                type = excluded.type,
+                name = excluded.name,
+                country_code = excluded.country_code,
+                lat = excluded.lat,
+                lon = excluded.lon,
+                data = excluded.data
+            """,
+            rows,
+        )
     source_rows = [
         (place_id, source_key, content_hash, True, now)
         for place_id, (source_key, content_hash) in source_state.items()
@@ -959,7 +1038,7 @@ def sync_places_from_data_sources(conn: DBConnection) -> Dict[str, Any]:
     expected_by_source: Dict[str, Set[str]] = {}
     for place_id, (source_key, _) in source_state.items():
         expected_by_source.setdefault(source_key, set()).add(place_id)
-    _delete_removed_source_places(conn, expected_by_source, now)
+    _delete_removed_source_places(conn, expected_by_source, now, target_source_keys)
     return {
         "place_count": len(rows),
         "source_count": len(source_rows),
@@ -993,70 +1072,37 @@ def _app_setting_json(conn: DBConnection, key: str) -> Any:
         return None
 
 
-def _run_external_source_refresh() -> bool:
-    scripts = [
-        APP_ROOT / "scripts" / "refresh_external_sources.py",
-    ]
-    for script_path in scripts:
-        if not script_path.exists():
-            continue
-        subprocess.run([sys.executable, str(script_path)], check=True, cwd=str(APP_ROOT))
-    return True
-
-
 def sync_data_sources_if_needed(*, force: bool = False, reason: str = "manual") -> Dict[str, Any]:
     init_db()
     digests = _compute_source_digests()
+    auto_sync_keys = {
+        source_key for source_key, config in SOURCE_DATASET_DEFINITIONS.items() if bool(config.get("auto_sync"))
+    }
+    tracked_digests = {source_key: digests[source_key] for source_key in auto_sync_keys if source_key in digests}
     with get_db() as conn:
         previous_digests = _app_setting_json(conn, "data_sync.source_digests") or {}
-        previous_refresh_row = conn.execute(
-            "SELECT value FROM app_settings WHERE key = ?",
-            ("data_sync.last_external_refresh_at",),
-        ).fetchone()
-        previous_refresh_at = str(previous_refresh_row["value"]) if previous_refresh_row else ""
-        ran_external_refresh = False
-        if DATA_SYNC_EXTERNAL_REFRESH_ENABLED and DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS > 0:
-            should_refresh = not previous_refresh_at
-            if not should_refresh:
-                try:
-                    last_refresh = datetime.fromisoformat(previous_refresh_at)
-                    should_refresh = (datetime.utcnow() - last_refresh).total_seconds() >= DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS
-                except ValueError:
-                    should_refresh = True
-            if should_refresh:
-                try:
-                    _run_external_source_refresh()
-                    ran_external_refresh = True
-                    digests = _compute_source_digests()
-                except Exception as exc:
-                    print(f"[data-sync] external refresh failed: {exc}")
-
-        if not force and digests == previous_digests and not ran_external_refresh:
+        if not force and tracked_digests == previous_digests:
             return {
                 "changed": False,
                 "reason": reason,
-                "source_digests": digests,
-                "ran_external_refresh": False,
+                "source_digests": tracked_digests,
             }
 
-        result = sync_places_from_data_sources(conn)
+        result = sync_places_from_data_sources(conn, auto_sync_keys if not force else None)
         settings = {
-            "data_sync.source_digests": json.dumps(result["source_digests"], sort_keys=True),
+            "data_sync.source_digests": json.dumps(tracked_digests, sort_keys=True),
             "data_sync.last_synced_at": result["synced_at"],
             "data_sync.last_sync_reason": reason,
         }
-        if ran_external_refresh:
-            settings["data_sync.last_external_refresh_at"] = result["synced_at"]
         _set_app_settings(conn, settings)
         print(
             f"[data-sync] synced {result['place_count']} places from {len(result['source_digests'])} sources"
-            f" (reason={reason}, external_refresh={ran_external_refresh})"
+            f" (reason={reason})"
         )
         return {
             "changed": True,
             "reason": reason,
             "source_digests": result["source_digests"],
-            "ran_external_refresh": ran_external_refresh,
             "place_count": result["place_count"],
         }
 
@@ -1092,14 +1138,28 @@ def stop_data_sync_thread() -> None:
         DATA_SYNC_THREAD = None
 
 
-def count_by_type(conn: DBConnection, place_type: str, visited_ids: List[str]) -> int:
+def _active_place_join_sql(place_alias: str = "places", state_alias: str = "pss") -> str:
+    return f"LEFT JOIN place_source_state {state_alias} ON {state_alias}.place_id = {place_alias}.id"
+
+
+def _active_place_filter_sql(state_alias: str = "pss") -> str:
+    return f"({state_alias}.place_id IS NULL OR {state_alias}.is_active = ?)"
+
+
+def count_by_type(conn: DBConnection, place_type: str, visited_ids: List[str], *, active_only: bool = True) -> int:
     if not visited_ids:
         return 0
     placeholders = ",".join("?" for _ in visited_ids)
-    return conn.execute(
-        f"SELECT COUNT(*) as count FROM places WHERE type = ? AND id IN ({placeholders})",
-        [place_type, *visited_ids],
-    ).fetchone()["count"]
+    query = f"SELECT COUNT(*) as count FROM places WHERE type = ? AND id IN ({placeholders})"
+    params: List[Any] = [place_type, *visited_ids]
+    if active_only:
+        query = (
+            "SELECT COUNT(*) as count "
+            f"FROM places {_active_place_join_sql()} "
+            f"WHERE places.type = ? AND places.id IN ({placeholders}) AND {_active_place_filter_sql()}"
+        )
+        params.append(True)
+    return conn.execute(query, params).fetchone()["count"]
 
 
 def get_place_by_id(conn: DBConnection, place_id: str) -> Any:
@@ -1191,13 +1251,23 @@ def _total_place_counts(conn: DBConnection) -> Dict[str, int]:
     totals: Dict[str, int] = {}
     for place_type in ("country", "state", "city", "airport", "site"):
         totals[place_type] = int(
-            conn.execute("SELECT COUNT(*) as count FROM places WHERE type = ?", (place_type,)).fetchone()["count"]
+            conn.execute(
+                "SELECT COUNT(*) as count "
+                f"FROM places {_active_place_join_sql()} "
+                f"WHERE places.type = ? AND {_active_place_filter_sql()}",
+                (place_type, True),
+            ).fetchone()["count"]
         )
     return totals
 
 
 def _total_continent_count(conn: DBConnection) -> int:
-    continent_rows = conn.execute("SELECT data FROM places WHERE type = 'country'").fetchall()
+    continent_rows = conn.execute(
+        "SELECT data "
+        f"FROM places {_active_place_join_sql()} "
+        f"WHERE places.type = 'country' AND {_active_place_filter_sql()}",
+        (True,),
+    ).fetchall()
     continents: Set[str] = set()
     for row in continent_rows:
         continent = get_continent_from_country_data(row["data"])
@@ -1244,14 +1314,20 @@ def _trip_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_i
     ).fetchall()
 
 
-def _place_rows_by_ids(conn: DBConnection, place_ids: List[str]) -> List[Any]:
+def _place_rows_by_ids(conn: DBConnection, place_ids: List[str], *, active_only: bool = False) -> List[Any]:
     if not place_ids:
         return []
     placeholders = ",".join("?" for _ in place_ids)
-    return conn.execute(
-        f"SELECT id, name, type, lat, lon, country_code, data FROM places WHERE id IN ({placeholders})",
-        place_ids,
-    ).fetchall()
+    query = f"SELECT id, name, type, lat, lon, country_code, data FROM places WHERE id IN ({placeholders})"
+    params: List[Any] = list(place_ids)
+    if active_only:
+        query = (
+            "SELECT places.id, places.name, places.type, places.lat, places.lon, places.country_code, places.data "
+            f"FROM places {_active_place_join_sql()} "
+            f"WHERE places.id IN ({placeholders}) AND {_active_place_filter_sql()}"
+        )
+        params.append(True)
+    return conn.execute(query, params).fetchall()
 
 
 def _build_achievements(context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1320,8 +1396,13 @@ def _compute_profile_stats(
     visited_rows = _visited_rows_for_profile(conn, profile_id, user_id)
     visited_ids = [str(row["place_id"]) for row in visited_rows]
     trip_log_rows = _trip_rows_for_profile(conn, profile_id, user_id)
-    visited_place_rows = _place_rows_by_ids(conn, visited_ids)
-    site_rows = conn.execute("SELECT id, data FROM places WHERE type = 'site'").fetchall()
+    visited_place_rows = _place_rows_by_ids(conn, visited_ids, active_only=True)
+    site_rows = conn.execute(
+        "SELECT places.id, places.data "
+        f"FROM places {_active_place_join_sql()} "
+        f"WHERE places.type = 'site' AND {_active_place_filter_sql()}",
+        (True,),
+    ).fetchall()
 
     trip_place_ids: List[str] = []
     total_estimated_miles = 0.0
@@ -2542,64 +2623,113 @@ async def get_places(
     query: Optional[str] = None,
     country_code: Optional[str] = None,
     major_only: bool = False,
+    include_total: bool = True,
     limit: int = Query(1000, ge=1, le=20000),
     offset: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     if type not in VALID_PLACE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid place type")
-    params: List[Any] = [type]
-    where = "WHERE type = ?"
+    params: List[Any] = [type, True]
+    where = f"WHERE places.type = ? AND {_active_place_filter_sql()}"
     if query:
-        where += " AND name LIKE ?"
+        where += " AND places.name LIKE ?"
         params.append(f"%{query}%")
     country_codes = [str(code).strip().upper() for code in str(country_code or "").split(",") if str(code).strip()]
     if country_codes:
         placeholders = ",".join("?" for _ in country_codes)
-        where += f" AND UPPER(country_code) IN ({placeholders})"
+        where += f" AND places.country_code IN ({placeholders})"
         params.extend(country_codes)
-    with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT id, name, country_code, lat, lon, data FROM places {where} ORDER BY name LIMIT ? OFFSET ?",
-            params + [limit, offset],
-        ).fetchall()
-        total = conn.execute(
-            f"SELECT COUNT(*) as count FROM places {where}",
-            params,
-        ).fetchone()["count"]
+
     items: List[Dict[str, Any]] = []
-    for row in rows:
-        item = dict(row)
-        try:
-            data = json.loads(item.get("data") or "{}")
-        except json.JSONDecodeError:
-            data = {}
-        state_code = extract_state_code(data)
-        item["state_code"] = state_code
-        item["category"] = str(data.get("category") or "").strip() or None
-        item["airport_code"] = extract_airport_code(data)
-        municipality = str(data.get("municipality") or data.get("city") or "").strip()
-        country_text = str(item.get("country_code") or "").strip()
-        location_parts = [part for part in [municipality, state_code, country_text] if part]
-        item["location"] = ", ".join(location_parts)
-        item["search_location"] = " ".join(location_parts).lower()
-        if type == "state" and not str(item.get("name") or "").strip():
-            fallback_code = state_code or str(item.get("id") or "").split("-")[-1].upper()
-            item["name"] = fallback_code or "Unknown"
+    total: Optional[int] = None
+    has_more = False
+    next_offset = offset
+
+    with get_db() as conn:
         if type == "airport" and major_only:
-            airport_type = str(data.get("type") or "").strip().lower()
-            airport_name = str(item.get("name") or "").lower()
-            allowed_type = airport_type in {"regional_airport", "medium_airport", "large_airport"}
-            allowed_name = "regional" in airport_name
-            if not item.get("airport_code") or not (allowed_type or allowed_name):
-                continue
-        item.pop("data", None)
-        items.append(item)
-    total = len(items) if type == "airport" and major_only else total
+            scan_offset = offset
+            chunk_size = max(limit, 1000)
+            while len(items) < limit:
+                rows = conn.execute(
+                    "SELECT places.id, places.name, places.country_code, places.lat, places.lon, places.data "
+                    f"FROM places {_active_place_join_sql()} {where} ORDER BY places.name LIMIT ? OFFSET ?",
+                    params + [chunk_size, scan_offset],
+                ).fetchall()
+                if not rows:
+                    has_more = False
+                    break
+                scan_offset += len(rows)
+                for row in rows:
+                    item = dict(row)
+                    try:
+                        data = json.loads(item.get("data") or "{}")
+                    except json.JSONDecodeError:
+                        data = {}
+                    state_code = extract_state_code(data)
+                    item["state_code"] = state_code
+                    item["category"] = str(data.get("category") or "").strip() or None
+                    item["airport_code"] = extract_airport_code(data)
+                    municipality = str(data.get("municipality") or data.get("city") or "").strip()
+                    country_text = str(item.get("country_code") or "").strip()
+                    location_parts = [part for part in [municipality, state_code, country_text] if part]
+                    item["location"] = ", ".join(location_parts)
+                    item["search_location"] = " ".join(location_parts).lower()
+                    airport_type = str(data.get("type") or "").strip().lower()
+                    airport_name = str(item.get("name") or "").lower()
+                    allowed_type = airport_type in {"regional_airport", "medium_airport", "large_airport"}
+                    allowed_name = "regional" in airport_name
+                    if not item.get("airport_code") or not (allowed_type or allowed_name):
+                        continue
+                    item.pop("data", None)
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
+                has_more = len(rows) == chunk_size
+                if len(rows) < chunk_size:
+                    break
+            next_offset = scan_offset
+        else:
+            rows = conn.execute(
+                "SELECT places.id, places.name, places.country_code, places.lat, places.lon, places.data "
+                f"FROM places {_active_place_join_sql()} {where} ORDER BY places.name LIMIT ? OFFSET ?",
+                params + [limit + 1, offset],
+            ).fetchall()
+            has_more = len(rows) > limit
+            rows = rows[:limit]
+            next_offset = offset + len(rows)
+            for row in rows:
+                item = dict(row)
+                try:
+                    data = json.loads(item.get("data") or "{}")
+                except json.JSONDecodeError:
+                    data = {}
+                state_code = extract_state_code(data)
+                item["state_code"] = state_code
+                item["category"] = str(data.get("category") or "").strip() or None
+                item["airport_code"] = extract_airport_code(data)
+                municipality = str(data.get("municipality") or data.get("city") or "").strip()
+                country_text = str(item.get("country_code") or "").strip()
+                location_parts = [part for part in [municipality, state_code, country_text] if part]
+                item["location"] = ", ".join(location_parts)
+                item["search_location"] = " ".join(location_parts).lower()
+                if type == "state" and not str(item.get("name") or "").strip():
+                    fallback_code = state_code or str(item.get("id") or "").split("-")[-1].upper()
+                    item["name"] = fallback_code or "Unknown"
+                item.pop("data", None)
+                items.append(item)
+        if include_total:
+            total = conn.execute(
+                "SELECT COUNT(*) as count "
+                f"FROM places {_active_place_join_sql()} {where}",
+                params,
+            ).fetchone()["count"]
     return {
         "items": items,
         "total": total,
         "limit": limit,
         "offset": offset,
+        "has_more": has_more,
+        "next_offset": next_offset,
     }
 
 
@@ -2609,8 +2739,10 @@ async def get_places_geojson(type: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid place type")
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, country_code, lat, lon, data FROM places WHERE type = ?",
-            (type,),
+            "SELECT places.id, places.name, places.country_code, places.lat, places.lon, places.data "
+            f"FROM places {_active_place_join_sql()} "
+            f"WHERE places.type = ? AND {_active_place_filter_sql()}",
+            (type, True),
         ).fetchall()
     features = []
     for row in rows:
