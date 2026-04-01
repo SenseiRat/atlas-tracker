@@ -43,10 +43,12 @@ body {
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg);
+  overflow: hidden;
 }
 
 .ui-error {
@@ -264,9 +266,10 @@ body {
 }
 
 .content {
-  flex: 1;
   display: grid;
   grid-template-columns: 320px 1fr;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -274,6 +277,8 @@ body {
   background: var(--panel);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tabs {
@@ -299,6 +304,8 @@ body {
 }
 
 .tab-panel {
+  flex: 1;
+  min-height: 0;
   padding: 0 16px 16px;
   display: flex;
   flex-direction: column;
@@ -407,7 +414,9 @@ body {
   overflow-y: auto;
   display: grid;
   gap: 10px;
-  height: calc(100vh - 360px);
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 .list li {
@@ -422,6 +431,9 @@ body {
 
 .map-area {
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .main-tabs {
@@ -474,6 +486,7 @@ body {
   inset: 0;
   padding: 76px 22px 22px;
   overflow: auto;
+  overscroll-behavior: contain;
   background: radial-gradient(circle at top, var(--panel) 0%, var(--bg) 65%);
   border-left: 1px solid var(--border);
 }
@@ -1209,26 +1222,16 @@ body {
 
   .content {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(280px, 42dvh) minmax(0, 1fr);
   }
 
   .sidebar {
-    max-height: 50vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
   }
 
   .list {
-    height: auto;
-    max-height: 260px;
-  }
-
-  .detail-panel {
-    position: relative;
-    min-height: 60vh;
-    border-left: 0;
-  }
-
-  .map {
-    min-height: 60vh;
-    position: relative;
+    max-height: none;
   }
 
   .map-controls {

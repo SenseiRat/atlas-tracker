@@ -1510,6 +1510,21 @@ function App() {
 
   useEffect(() => {
     const map = mapRef.current;
+    const container = mapContainerRef.current;
+    if (!map || !container || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      map.resize();
+    });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isMapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !isMapReady) return;
     const theme = mapThemeTokens[themeMode];
     map.setPaintProperty('background', 'background-color', theme.background);
