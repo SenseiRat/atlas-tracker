@@ -1,7 +1,9 @@
 import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import maplibregl, { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { AchievementsPanel } from './AchievementsPanel';
 import { TravelStatsPanel } from './TravelStatsPanel';
+import { buildAchievementModel } from './achievements';
 import { buildTravelStatsModel } from './travelStats';
 
 type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
@@ -1087,6 +1089,15 @@ function App() {
   const travelStatsModel = useMemo(
     () =>
       buildTravelStatsModel({
+        places,
+        visits: activeVisits,
+        tripLogs: activeTrips,
+      }),
+    [activeTrips, activeVisits, places],
+  );
+  const achievementModel = useMemo(
+    () =>
+      buildAchievementModel({
         places,
         visits: activeVisits,
         tripLogs: activeTrips,
@@ -3702,60 +3713,10 @@ function App() {
               <div className="panel-header">
                 <div>
                   <h3>Achievements</h3>
-                  <p>Milestones earned by what this profile has actually done.</p>
+                  <p>Tiered progress and milestones based on the travel data this profile already tracks.</p>
                 </div>
               </div>
-
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <span>Earned</span>
-                  <strong>
-                    {stats?.achievements.earned ?? 0} / {stats?.achievements.total ?? 0}
-                  </strong>
-                  <small>{Math.round(stats?.achievements.score ?? 0)} points</small>
-                </div>
-                <div className="stat-card">
-                  <span>Leaderboard rank</span>
-                  <strong>
-                    {stats?.leaderboard.current_profile?.eligible
-                      ? `#${stats.leaderboard.current_profile.achievement_rank ?? '--'}`
-                      : '--'}
-                  </strong>
-                  <small>
-                    {stats?.leaderboard.current_profile?.eligible ? 'Among public profiles' : 'Private or demo view'}
-                  </small>
-                </div>
-              </div>
-
-              <div className="achievement-grid">
-                {(stats?.achievements.items ?? []).map((achievement) => (
-                  <article
-                    key={achievement.id}
-                    className={`achievement-card ${achievement.earned ? 'achievement-card--earned' : ''}`}
-                  >
-                    <div className="achievement-card__header">
-                      <div>
-                        <span>{achievement.category}</span>
-                        <h4>{achievement.title}</h4>
-                      </div>
-                      <strong>{achievement.points} pts</strong>
-                    </div>
-                    <p>{achievement.description}</p>
-                    <div className="achievement-progress">
-                      <div
-                        className="achievement-progress__bar"
-                        style={{ width: `${achievement.progress_percent}%` }}
-                      />
-                    </div>
-                    <small>{achievement.progress_label}</small>
-                    <small>
-                      {achievement.earned
-                        ? 'Earned'
-                        : `Rarity: ${achievement.rarity_percent ?? 0}% of public profiles`}
-                    </small>
-                  </article>
-                ))}
-              </div>
+              <AchievementsPanel model={achievementModel} />
             </div>
           )}
 

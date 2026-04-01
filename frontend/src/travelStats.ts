@@ -248,6 +248,8 @@ type DerivedContext = {
   latestMichelinVisitDate: string | null;
 };
 
+export type TravelDataContext = DerivedContext;
+
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH = new Date().getMonth() + 1;
 const KG_CO2E_PER_MILE = 0.24;
@@ -777,6 +779,14 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
   };
 }
 
+export function buildTravelDataContext(args: {
+  places: TravelPlacesByType;
+  visits: TravelVisit[];
+  tripLogs: TravelTripLog[];
+}): TravelDataContext {
+  return buildContext(args.places, args.visits, args.tripLogs);
+}
+
 const calculators: Record<TravelStatSelector, (context: DerivedContext) => TravelStatResult | null> = {
   total_trips: (context) => makeCountResult('Total trips taken', context.datedTrips.length),
   total_countries: (context) => makeCountResult('Total countries visited', context.allCountryCodes.size),
@@ -1059,7 +1069,7 @@ const registry = [...supportedDefinitions, ...expandableDefinitions, ...unsuppor
 
 export function buildTravelStatsModel(args: { places: TravelPlacesByType; visits: TravelVisit[]; tripLogs: TravelTripLog[] }): TravelStatsModel {
   try {
-    const context = buildContext(args.places, args.visits, args.tripLogs);
+    const context = buildTravelDataContext(args);
     const evaluated = registry
       .map((definition) => {
         try {

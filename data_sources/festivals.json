@@ -1,0 +1,4657 @@
+{
+  "dataset": "cultural_festivals_seed",
+  "version": "1.0",
+  "generated_on": "2026-04-01",
+  "entry_count": 179,
+  "notes": [
+    "Coordinates are map-anchor coordinates for a customary city, town, island, or ceremonial area associated with the festival.",
+    "Many festivals are mobile, multi-site, lunar, or diaspora-observed; anchors are intentionally stable for mapping, not exact route geometry.",
+    "Fields are intended as a seed dataset for application use and later editorial cleanup."
+  ],
+  "fields": {
+    "name": "Primary English display name",
+    "alternate_names": "Alternate names or transliterations",
+    "country_or_countries": "One or more countries or broader observing regions",
+    "region": "Broad world region",
+    "city_or_locality": "Anchor place name for map pinning",
+    "latitude": "Anchor latitude in decimal degrees",
+    "longitude": "Anchor longitude in decimal degrees",
+    "festival_type": "High-level category",
+    "tradition": "Primary cultural/religious tradition",
+    "recurrence": "Approximate recurrence pattern",
+    "date_notes": "Season/date notes; often variable for lunar festivals",
+    "globally_famous": "Boolean indicating broad international recognition",
+    "culturally_significant": "Boolean indicating strong cultural importance",
+    "heritage_recognized": "Boolean indicating likely UNESCO or similar heritage linkage/recognition, used as seed-level flag only",
+    "summary": "Short app-friendly description",
+    "tags": "Search/filter tags"
+  },
+  "entries": [
+    {
+      "name": "Lunar New Year",
+      "alternate_names": [
+        "Spring Festival",
+        "Chinese New Year"
+      ],
+      "country_or_countries": [
+        "China",
+        "East Asia",
+        "Worldwide diaspora"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Beijing",
+      "latitude": 39.9042,
+      "longitude": 116.4074,
+      "festival_type": "New Year",
+      "tradition": "Sinosphere cultural / religious",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "Late January to February; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major new year festival celebrated across the Sinosphere and global diaspora communities.",
+      "tags": [
+        "new_year",
+        "family",
+        "parade",
+        "lanterns"
+      ]
+    },
+    {
+      "name": "Lantern Festival",
+      "alternate_names": [
+        "Yuanxiao Festival"
+      ],
+      "country_or_countries": [
+        "China",
+        "Taiwan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Pingxi",
+      "latitude": 25.0307,
+      "longitude": 121.7304,
+      "festival_type": "Seasonal",
+      "tradition": "Chinese folk/religious",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "15th day of first lunar month",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Lantern-lighting festival marking the close of Lunar New Year celebrations.",
+      "tags": [
+        "lanterns",
+        "new_year",
+        "folk"
+      ]
+    },
+    {
+      "name": "Qingming Festival",
+      "alternate_names": [
+        "Tomb-Sweeping Day"
+      ],
+      "country_or_countries": [
+        "China",
+        "Taiwan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Suzhou",
+      "latitude": 31.2989,
+      "longitude": 120.5853,
+      "festival_type": "Ancestral",
+      "tradition": "Chinese folk",
+      "recurrence": "annual (solar term)",
+      "date_notes": "Early April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival centered on ancestor remembrance and gravesite visits.",
+      "tags": [
+        "ancestral",
+        "spring",
+        "family"
+      ]
+    },
+    {
+      "name": "Dragon Boat Festival",
+      "alternate_names": [
+        "Duanwu Festival"
+      ],
+      "country_or_countries": [
+        "China",
+        "Taiwan",
+        "Hong Kong"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Hong Kong",
+      "latitude": 22.3193,
+      "longitude": 114.1694,
+      "festival_type": "Traditional folk festival",
+      "tradition": "Chinese folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "5th day of 5th lunar month",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Boat-racing and food traditions linked to seasonal rites and historical memory.",
+      "tags": [
+        "boats",
+        "race",
+        "food",
+        "summer"
+      ]
+    },
+    {
+      "name": "Mid-Autumn Festival",
+      "alternate_names": [
+        "Moon Festival"
+      ],
+      "country_or_countries": [
+        "China",
+        "Vietnam",
+        "Sinosphere"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Hangzhou",
+      "latitude": 30.2741,
+      "longitude": 120.1551,
+      "festival_type": "Harvest",
+      "tradition": "Chinese folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "15th day of 8th lunar month",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Moon-viewing and family reunion festival associated with autumn harvest.",
+      "tags": [
+        "harvest",
+        "moon",
+        "family",
+        "autumn"
+      ]
+    },
+    {
+      "name": "Double Ninth Festival",
+      "alternate_names": [
+        "Chongyang Festival"
+      ],
+      "country_or_countries": [
+        "China"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Chongqing",
+      "latitude": 29.4316,
+      "longitude": 106.9123,
+      "festival_type": "Seasonal",
+      "tradition": "Chinese folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "9th day of 9th lunar month",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival associated with mountain climbing, ancestor respect, and seasonal observance.",
+      "tags": [
+        "mountains",
+        "ancestral",
+        "autumn"
+      ]
+    },
+    {
+      "name": "Obon",
+      "alternate_names": [
+        "Bon Festival"
+      ],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Kyoto",
+      "latitude": 35.0116,
+      "longitude": 135.7681,
+      "festival_type": "Ancestral",
+      "tradition": "Buddhist / Japanese folk",
+      "recurrence": "annual",
+      "date_notes": "Usually August; regional variation",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Japanese festival honoring ancestors with dances, lanterns, and homecoming traditions.",
+      "tags": [
+        "ancestral",
+        "dance",
+        "lanterns",
+        "summer"
+      ]
+    },
+    {
+      "name": "Gion Matsuri",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Kyoto",
+      "latitude": 35.0116,
+      "longitude": 135.7681,
+      "festival_type": "Traditional festival",
+      "tradition": "Shinto / Japanese folk",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Kyoto's major float festival with long historical roots and elaborate processions.",
+      "tags": [
+        "float",
+        "parade",
+        "summer",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Nebuta Matsuri",
+      "alternate_names": [
+        "Aomori Nebuta Festival"
+      ],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Aomori",
+      "latitude": 40.8222,
+      "longitude": 140.7474,
+      "festival_type": "Traditional festival",
+      "tradition": "Japanese folk",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large illuminated float festival in Aomori with dance and taiko performances.",
+      "tags": [
+        "float",
+        "lanterns",
+        "dance",
+        "summer"
+      ]
+    },
+    {
+      "name": "Kanda Matsuri",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Tokyo",
+      "latitude": 35.6762,
+      "longitude": 139.6503,
+      "festival_type": "Traditional festival",
+      "tradition": "Shinto",
+      "recurrence": "biennial",
+      "date_notes": "May in odd-numbered years",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "One of Tokyo's major Shinto festivals featuring mikoshi processions.",
+      "tags": [
+        "parade",
+        "religious",
+        "shinto"
+      ]
+    },
+    {
+      "name": "Awa Odori",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Tokushima",
+      "latitude": 34.0703,
+      "longitude": 134.5548,
+      "festival_type": "Dance festival",
+      "tradition": "Japanese folk / Buddhist season",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Japanese dance festival held during the Obon season.",
+      "tags": [
+        "dance",
+        "summer",
+        "folk"
+      ]
+    },
+    {
+      "name": "Setsubun",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Japan"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Osaka",
+      "latitude": 34.6937,
+      "longitude": 135.5023,
+      "festival_type": "Seasonal",
+      "tradition": "Japanese folk / Shinto-Buddhist",
+      "recurrence": "annual",
+      "date_notes": "Early February",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Seasonal rite marking the start of spring with bean-throwing rituals.",
+      "tags": [
+        "spring",
+        "ritual",
+        "folk"
+      ]
+    },
+    {
+      "name": "Chuseok",
+      "alternate_names": [
+        "Korean Harvest Festival"
+      ],
+      "country_or_countries": [
+        "South Korea",
+        "North Korea"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Seoul",
+      "latitude": 37.5665,
+      "longitude": 126.978,
+      "festival_type": "Harvest",
+      "tradition": "Korean folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "8th lunar month",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Korean harvest and ancestor festival centered on family gatherings.",
+      "tags": [
+        "harvest",
+        "ancestral",
+        "family"
+      ]
+    },
+    {
+      "name": "Dano",
+      "alternate_names": [
+        "Surit-nal"
+      ],
+      "country_or_countries": [
+        "South Korea"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Gangneung",
+      "latitude": 37.7519,
+      "longitude": 128.8761,
+      "festival_type": "Seasonal",
+      "tradition": "Korean folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "5th day of 5th lunar month",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Traditional Korean seasonal festival best known through the Gangneung Danoje celebration.",
+      "tags": [
+        "folk",
+        "ritual",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Boryeong Mud Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "South Korea"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Boryeong",
+      "latitude": 36.3332,
+      "longitude": 126.6127,
+      "festival_type": "Modern cultural festival",
+      "tradition": "Contemporary civic",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": true,
+      "culturally_significant": false,
+      "heritage_recognized": false,
+      "summary": "Popular modern Korean festival built around mud-based events and performances.",
+      "tags": [
+        "summer",
+        "beach",
+        "modern"
+      ]
+    },
+    {
+      "name": "Tết Nguyên Đán",
+      "alternate_names": [
+        "Tết",
+        "Vietnamese New Year"
+      ],
+      "country_or_countries": [
+        "Vietnam"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Hanoi",
+      "latitude": 21.0278,
+      "longitude": 105.8342,
+      "festival_type": "New Year",
+      "tradition": "Vietnamese folk / ancestral",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "Late January to February; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Vietnam's most important annual festival centered on family, ancestors, and renewal.",
+      "tags": [
+        "new_year",
+        "family",
+        "ancestral"
+      ]
+    },
+    {
+      "name": "Mid-Autumn Festival (Vietnam)",
+      "alternate_names": [
+        "Tết Trung Thu"
+      ],
+      "country_or_countries": [
+        "Vietnam"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Hoi An",
+      "latitude": 15.8801,
+      "longitude": 108.338,
+      "festival_type": "Harvest",
+      "tradition": "Vietnamese folk",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "15th day of 8th lunar month",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Lantern-filled festival especially associated with children and family gatherings.",
+      "tags": [
+        "lanterns",
+        "harvest",
+        "family"
+      ]
+    },
+    {
+      "name": "Songkran",
+      "alternate_names": [
+        "Thai New Year"
+      ],
+      "country_or_countries": [
+        "Thailand"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Chiang Mai",
+      "latitude": 18.7883,
+      "longitude": 98.9853,
+      "festival_type": "New Year",
+      "tradition": "Thai Buddhist / folk",
+      "recurrence": "annual",
+      "date_notes": "April 13-15",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Thai New Year festival combining merit-making, cleansing rites, and water celebrations.",
+      "tags": [
+        "new_year",
+        "water",
+        "buddhist",
+        "spring"
+      ]
+    },
+    {
+      "name": "Loi Krathong",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Thailand"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Sukhothai",
+      "latitude": 17.0061,
+      "longitude": 99.823,
+      "festival_type": "Water festival",
+      "tradition": "Thai folk / Buddhist",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "12th lunar month",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival of floating offerings on water as an act of reverence and symbolic release.",
+      "tags": [
+        "water",
+        "lanterns",
+        "night"
+      ]
+    },
+    {
+      "name": "Yi Peng",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Thailand"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Chiang Mai",
+      "latitude": 18.7883,
+      "longitude": 98.9853,
+      "festival_type": "Lantern festival",
+      "tradition": "Lanna / Buddhist",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "Usually November",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Northern Thai lantern festival often overlapping with Loi Krathong season.",
+      "tags": [
+        "lanterns",
+        "night",
+        "buddhist"
+      ]
+    },
+    {
+      "name": "Thingyan",
+      "alternate_names": [
+        "Myanmar New Year"
+      ],
+      "country_or_countries": [
+        "Myanmar"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Yangon",
+      "latitude": 16.8409,
+      "longitude": 96.1735,
+      "festival_type": "New Year",
+      "tradition": "Burmese Buddhist",
+      "recurrence": "annual",
+      "date_notes": "Mid-April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Myanmar's water festival marking the traditional new year.",
+      "tags": [
+        "new_year",
+        "water",
+        "buddhist"
+      ]
+    },
+    {
+      "name": "Pchum Ben",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Cambodia"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Phnom Penh",
+      "latitude": 11.5564,
+      "longitude": 104.9282,
+      "festival_type": "Ancestral",
+      "tradition": "Khmer Buddhist",
+      "recurrence": "annual",
+      "date_notes": "September-October; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Cambodian ancestor remembrance festival centered on offerings and temple visits.",
+      "tags": [
+        "ancestral",
+        "buddhist",
+        "ritual"
+      ]
+    },
+    {
+      "name": "Bon Om Touk",
+      "alternate_names": [
+        "Cambodian Water Festival"
+      ],
+      "country_or_countries": [
+        "Cambodia"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Phnom Penh",
+      "latitude": 11.5564,
+      "longitude": 104.9282,
+      "festival_type": "Water festival",
+      "tradition": "Khmer folk",
+      "recurrence": "annual",
+      "date_notes": "November; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival marking the reverse flow of the Tonlé Sap with boat races and celebrations.",
+      "tags": [
+        "water",
+        "boats",
+        "race"
+      ]
+    },
+    {
+      "name": "Nyepi",
+      "alternate_names": [
+        "Balinese Day of Silence"
+      ],
+      "country_or_countries": [
+        "Indonesia"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Denpasar",
+      "latitude": -8.6705,
+      "longitude": 115.2126,
+      "festival_type": "New Year",
+      "tradition": "Balinese Hindu",
+      "recurrence": "annual (Saka calendar)",
+      "date_notes": "March; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Balinese Hindu New Year observed through ritual cleansing and a day of silence.",
+      "tags": [
+        "new_year",
+        "silence",
+        "hindu",
+        "ritual"
+      ]
+    },
+    {
+      "name": "Galungan",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Indonesia"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Ubud",
+      "latitude": -8.5069,
+      "longitude": 115.2625,
+      "festival_type": "Religious festival",
+      "tradition": "Balinese Hindu",
+      "recurrence": "210-day cycle",
+      "date_notes": "Date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Balinese festival celebrating dharma and ancestral spirits' return to earth.",
+      "tags": [
+        "hindu",
+        "ancestral",
+        "ritual"
+      ]
+    },
+    {
+      "name": "Kecak Festival",
+      "alternate_names": [
+        "Bali Arts Festival (anchor)"
+      ],
+      "country_or_countries": [
+        "Indonesia"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Denpasar",
+      "latitude": -8.6705,
+      "longitude": 115.2126,
+      "festival_type": "Arts festival",
+      "tradition": "Balinese performing arts",
+      "recurrence": "annual",
+      "date_notes": "June-July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival showcase for Balinese performance traditions and arts.",
+      "tags": [
+        "dance",
+        "music",
+        "arts"
+      ]
+    },
+    {
+      "name": "Sinulog",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Philippines"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Cebu City",
+      "latitude": 10.3157,
+      "longitude": 123.8854,
+      "festival_type": "Religious festival",
+      "tradition": "Catholic / Filipino folk",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Filipino Catholic festival honoring the Santo Niño with processions and dance.",
+      "tags": [
+        "religious",
+        "dance",
+        "parade"
+      ]
+    },
+    {
+      "name": "Ati-Atihan",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Philippines"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Kalibo",
+      "latitude": 11.7061,
+      "longitude": 122.3648,
+      "festival_type": "Religious festival",
+      "tradition": "Catholic / Ati-inspired folk tradition",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Colorful Filipino festival with body paint, dancing, and Santo Niño devotion.",
+      "tags": [
+        "dance",
+        "parade",
+        "religious"
+      ]
+    },
+    {
+      "name": "Pahiyas Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Philippines"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Lucban",
+      "latitude": 14.1138,
+      "longitude": 121.5535,
+      "festival_type": "Harvest",
+      "tradition": "Catholic / folk",
+      "recurrence": "annual",
+      "date_notes": "May 15",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Harvest thanksgiving festival known for decorated houses and local produce.",
+      "tags": [
+        "harvest",
+        "food",
+        "decorations"
+      ]
+    },
+    {
+      "name": "Boun Pi Mai",
+      "alternate_names": [
+        "Lao New Year"
+      ],
+      "country_or_countries": [
+        "Laos"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Luang Prabang",
+      "latitude": 19.8856,
+      "longitude": 102.135,
+      "festival_type": "New Year",
+      "tradition": "Lao Buddhist",
+      "recurrence": "annual",
+      "date_notes": "April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Lao New Year festival with water rites, cleansing, and Buddhist observances.",
+      "tags": [
+        "new_year",
+        "water",
+        "buddhist"
+      ]
+    },
+    {
+      "name": "Hari Raya Aidilfitri",
+      "alternate_names": [
+        "Eid al-Fitr (Malaysia/Brunei)"
+      ],
+      "country_or_countries": [
+        "Malaysia",
+        "Brunei",
+        "Singapore"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "Kuala Lumpur",
+      "latitude": 3.139,
+      "longitude": 101.6869,
+      "festival_type": "Religious festival",
+      "tradition": "Islamic",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major end-of-Ramadan festival observed widely across Muslim communities in maritime Southeast Asia.",
+      "tags": [
+        "religious",
+        "family",
+        "feast"
+      ]
+    },
+    {
+      "name": "Deepavali (Malaysia)",
+      "alternate_names": [
+        "Diwali"
+      ],
+      "country_or_countries": [
+        "Malaysia",
+        "Singapore"
+      ],
+      "region": "Southeast Asia",
+      "city_or_locality": "George Town",
+      "latitude": 5.4141,
+      "longitude": 100.3288,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "October-November; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival of lights celebrated by Hindu communities in Southeast Asia.",
+      "tags": [
+        "lights",
+        "hindu",
+        "family"
+      ]
+    },
+    {
+      "name": "Diwali",
+      "alternate_names": [
+        "Deepavali"
+      ],
+      "country_or_countries": [
+        "India",
+        "South Asia",
+        "Worldwide diaspora"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Varanasi",
+      "latitude": 25.3176,
+      "longitude": 82.9739,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu, Jain, Sikh",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "October-November; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival of lights celebrated across South Asia and the global diaspora.",
+      "tags": [
+        "lights",
+        "hindu",
+        "family",
+        "autumn"
+      ]
+    },
+    {
+      "name": "Holi",
+      "alternate_names": [
+        "Festival of Colors"
+      ],
+      "country_or_countries": [
+        "India",
+        "Nepal",
+        "South Asian diaspora"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Mathura",
+      "latitude": 27.4924,
+      "longitude": 77.6737,
+      "festival_type": "Spring festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "February-March; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Spring festival marked by color play, music, and ritual observances.",
+      "tags": [
+        "spring",
+        "color",
+        "hindu"
+      ]
+    },
+    {
+      "name": "Navratri",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Ahmedabad",
+      "latitude": 23.0225,
+      "longitude": 72.5714,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Nine-night Hindu festival often associated with dance, fasting, and goddess worship.",
+      "tags": [
+        "dance",
+        "hindu",
+        "religious"
+      ]
+    },
+    {
+      "name": "Dussehra",
+      "alternate_names": [
+        "Vijayadashami"
+      ],
+      "country_or_countries": [
+        "India",
+        "Nepal"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Mysuru",
+      "latitude": 12.2958,
+      "longitude": 76.6394,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival celebrating the triumph of good over evil, often with processions and performances.",
+      "tags": [
+        "hindu",
+        "procession",
+        "autumn"
+      ]
+    },
+    {
+      "name": "Durga Puja",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India",
+        "Bangladesh"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Kolkata",
+      "latitude": 22.5726,
+      "longitude": 88.3639,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Major Bengali festival with elaborate temporary shrines and community celebrations.",
+      "tags": [
+        "hindu",
+        "art",
+        "community",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Kumbh Mela",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Prayagraj",
+      "latitude": 25.4358,
+      "longitude": 81.8463,
+      "festival_type": "Pilgrimage festival",
+      "tradition": "Hindu",
+      "recurrence": "periodic",
+      "date_notes": "Cyclical; city rotates",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Massive Hindu pilgrimage gathering centered on ritual bathing and spiritual merit.",
+      "tags": [
+        "pilgrimage",
+        "religious",
+        "river",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Ganesh Chaturthi",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Mumbai",
+      "latitude": 19.076,
+      "longitude": 72.8777,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "August-September; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival honoring Ganesha with idol installations, community rituals, and immersion processions.",
+      "tags": [
+        "hindu",
+        "procession",
+        "river",
+        "city"
+      ]
+    },
+    {
+      "name": "Pongal",
+      "alternate_names": [
+        "Thai Pongal"
+      ],
+      "country_or_countries": [
+        "India",
+        "Sri Lanka"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Chennai",
+      "latitude": 13.0827,
+      "longitude": 80.2707,
+      "festival_type": "Harvest",
+      "tradition": "Tamil Hindu",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Tamil harvest festival marking seasonal renewal and agrarian gratitude.",
+      "tags": [
+        "harvest",
+        "hindu",
+        "food"
+      ]
+    },
+    {
+      "name": "Onam",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Kochi",
+      "latitude": 9.9312,
+      "longitude": 76.2673,
+      "festival_type": "Harvest",
+      "tradition": "Malayali cultural / Hindu",
+      "recurrence": "annual",
+      "date_notes": "August-September",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Kerala's major cultural festival known for floral designs, feasts, and boat races.",
+      "tags": [
+        "harvest",
+        "boats",
+        "food",
+        "flowers"
+      ]
+    },
+    {
+      "name": "Bihu",
+      "alternate_names": [
+        "Rongali Bihu"
+      ],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Guwahati",
+      "latitude": 26.1445,
+      "longitude": 91.7362,
+      "festival_type": "Seasonal",
+      "tradition": "Assamese folk",
+      "recurrence": "annual",
+      "date_notes": "April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Assamese festival cycle celebrating agricultural seasons, dance, and music.",
+      "tags": [
+        "harvest",
+        "dance",
+        "music"
+      ]
+    },
+    {
+      "name": "Vesak",
+      "alternate_names": [
+        "Buddha Day",
+        "Wesak"
+      ],
+      "country_or_countries": [
+        "Sri Lanka",
+        "Thailand",
+        "Myanmar",
+        "Cambodia",
+        "Laos",
+        "Worldwide Buddhist communities"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Kandy",
+      "latitude": 7.2906,
+      "longitude": 80.6337,
+      "festival_type": "Religious festival",
+      "tradition": "Buddhist",
+      "recurrence": "annual (lunar)",
+      "date_notes": "April-May; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Buddhist observance commemorating the Buddha's birth, enlightenment, and passing.",
+      "tags": [
+        "buddhist",
+        "lanterns",
+        "religious"
+      ]
+    },
+    {
+      "name": "Esala Perahera",
+      "alternate_names": [
+        "Kandy Perahera"
+      ],
+      "country_or_countries": [
+        "Sri Lanka"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Kandy",
+      "latitude": 7.2906,
+      "longitude": 80.6337,
+      "festival_type": "Religious festival",
+      "tradition": "Buddhist / Sinhala",
+      "recurrence": "annual",
+      "date_notes": "July-August",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Grand Sri Lankan procession featuring dancers, drummers, and decorated elephants.",
+      "tags": [
+        "procession",
+        "dance",
+        "religious"
+      ]
+    },
+    {
+      "name": "Pohela Boishakh",
+      "alternate_names": [
+        "Bengali New Year"
+      ],
+      "country_or_countries": [
+        "Bangladesh",
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Dhaka",
+      "latitude": 23.8103,
+      "longitude": 90.4125,
+      "festival_type": "New Year",
+      "tradition": "Bengali cultural",
+      "recurrence": "annual",
+      "date_notes": "April 14 or 15",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Bengali New Year celebration featuring art, music, and public festivities.",
+      "tags": [
+        "new_year",
+        "parade",
+        "music"
+      ]
+    },
+    {
+      "name": "Bisket Jatra",
+      "alternate_names": [
+        "Biska Jatra"
+      ],
+      "country_or_countries": [
+        "Nepal"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Bhaktapur",
+      "latitude": 27.671,
+      "longitude": 85.4298,
+      "festival_type": "New Year",
+      "tradition": "Newar cultural",
+      "recurrence": "annual",
+      "date_notes": "April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Bhaktapur new year festival known for chariot processions and public ritual competition.",
+      "tags": [
+        "new_year",
+        "chariot",
+        "ritual"
+      ]
+    },
+    {
+      "name": "Dashain",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Nepal"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Kathmandu",
+      "latitude": 27.7172,
+      "longitude": 85.324,
+      "festival_type": "Religious festival",
+      "tradition": "Hindu",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Nepal's biggest festival, blending family reunion, ritual blessing, and goddess worship.",
+      "tags": [
+        "hindu",
+        "family",
+        "autumn"
+      ]
+    },
+    {
+      "name": "Nowruz",
+      "alternate_names": [
+        "Navruz",
+        "Persian New Year"
+      ],
+      "country_or_countries": [
+        "Iran",
+        "Afghanistan",
+        "Tajikistan",
+        "Uzbekistan",
+        "Azerbaijan",
+        "Kurdish regions",
+        "wider Persianate world"
+      ],
+      "region": "Middle East / Central Asia",
+      "city_or_locality": "Tehran",
+      "latitude": 35.6892,
+      "longitude": 51.389,
+      "festival_type": "New Year",
+      "tradition": "Persian cultural",
+      "recurrence": "annual",
+      "date_notes": "Around March 20-21",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Spring equinox new year celebrated across the Persianate world.",
+      "tags": [
+        "new_year",
+        "spring",
+        "family",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Yalda Night",
+      "alternate_names": [
+        "Shab-e Yalda"
+      ],
+      "country_or_countries": [
+        "Iran",
+        "Afghanistan"
+      ],
+      "region": "Middle East / Central Asia",
+      "city_or_locality": "Shiraz",
+      "latitude": 29.5918,
+      "longitude": 52.5837,
+      "festival_type": "Winter festival",
+      "tradition": "Persian cultural",
+      "recurrence": "annual",
+      "date_notes": "Winter solstice",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Persian winter solstice celebration centered on family gatherings and poetry.",
+      "tags": [
+        "winter",
+        "solstice",
+        "family",
+        "poetry"
+      ]
+    },
+    {
+      "name": "Sadeh",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Iran"
+      ],
+      "region": "Middle East / Central Asia",
+      "city_or_locality": "Yazd",
+      "latitude": 31.8974,
+      "longitude": 54.3569,
+      "festival_type": "Fire festival",
+      "tradition": "Zoroastrian / Persian",
+      "recurrence": "annual",
+      "date_notes": "January-February",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Mid-winter Persian fire festival with roots in Zoroastrian tradition.",
+      "tags": [
+        "fire",
+        "winter",
+        "zoroastrian"
+      ]
+    },
+    {
+      "name": "Mawlid al-Nabi",
+      "alternate_names": [
+        "Mawlid"
+      ],
+      "country_or_countries": [
+        "Muslim world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Cairo",
+      "latitude": 30.0444,
+      "longitude": 31.2357,
+      "festival_type": "Religious festival",
+      "tradition": "Islamic",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Commemoration of the Prophet Muhammad's birth observed in many Muslim communities.",
+      "tags": [
+        "religious",
+        "islamic",
+        "procession"
+      ]
+    },
+    {
+      "name": "Eid al-Fitr",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Muslim world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Istanbul",
+      "latitude": 41.0082,
+      "longitude": 28.9784,
+      "festival_type": "Religious festival",
+      "tradition": "Islamic",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival marking the end of Ramadan with prayer, charity, and family celebration.",
+      "tags": [
+        "religious",
+        "islamic",
+        "family",
+        "feast"
+      ]
+    },
+    {
+      "name": "Eid al-Adha",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Muslim world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Mecca",
+      "latitude": 21.3891,
+      "longitude": 39.8579,
+      "festival_type": "Religious festival",
+      "tradition": "Islamic",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Islamic festival of sacrifice linked to pilgrimage season.",
+      "tags": [
+        "religious",
+        "islamic",
+        "pilgrimage",
+        "feast"
+      ]
+    },
+    {
+      "name": "Ashura",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Shia communities worldwide"
+      ],
+      "region": "Middle East",
+      "city_or_locality": "Karbala",
+      "latitude": 32.616,
+      "longitude": 44.0249,
+      "festival_type": "Religious commemoration",
+      "tradition": "Islamic (Shia)",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Commemoration of the martyrdom of Husayn ibn Ali, especially central in Shia communities.",
+      "tags": [
+        "religious",
+        "mourning",
+        "procession"
+      ]
+    },
+    {
+      "name": "Ramadan Nights",
+      "alternate_names": [
+        "Ramadan festivities"
+      ],
+      "country_or_countries": [
+        "Muslim world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Marrakesh",
+      "latitude": 31.6295,
+      "longitude": -7.9811,
+      "festival_type": "Religious season",
+      "tradition": "Islamic",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Seasonal nightly cultural life and religious observance during Ramadan.",
+      "tags": [
+        "religious",
+        "islamic",
+        "night",
+        "food"
+      ]
+    },
+    {
+      "name": "Mevlevi Sema Ceremony",
+      "alternate_names": [
+        "Whirling Dervishes Festival anchor"
+      ],
+      "country_or_countries": [
+        "Turkey"
+      ],
+      "region": "Middle East / Europe",
+      "city_or_locality": "Konya",
+      "latitude": 37.8746,
+      "longitude": 32.4932,
+      "festival_type": "Religious ceremony / festival",
+      "tradition": "Sufi Islamic",
+      "recurrence": "annual",
+      "date_notes": "December commemoration especially notable",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Sufi ceremonial tradition associated with Rumi and Mevlevi communities.",
+      "tags": [
+        "religious",
+        "dance",
+        "sufi",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Hıdırellez",
+      "alternate_names": [
+        "Hidrellez"
+      ],
+      "country_or_countries": [
+        "Turkey",
+        "Balkans"
+      ],
+      "region": "Middle East / Europe",
+      "city_or_locality": "Edirne",
+      "latitude": 41.6771,
+      "longitude": 26.5557,
+      "festival_type": "Spring festival",
+      "tradition": "Turkish / Balkan folk",
+      "recurrence": "annual",
+      "date_notes": "May 5-6",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Spring festival celebrating renewal and seasonal transition.",
+      "tags": [
+        "spring",
+        "folk",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Purim",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Israel",
+        "Jewish diaspora"
+      ],
+      "region": "Middle East / Global diaspora",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "Religious festival",
+      "tradition": "Jewish",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "February-March; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Jewish festival marked by public readings, costumes, and celebration.",
+      "tags": [
+        "religious",
+        "costume",
+        "jewish"
+      ]
+    },
+    {
+      "name": "Passover",
+      "alternate_names": [
+        "Pesach"
+      ],
+      "country_or_countries": [
+        "Israel",
+        "Jewish diaspora"
+      ],
+      "region": "Middle East / Global diaspora",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "Religious festival",
+      "tradition": "Jewish",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "March-April; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Jewish festival commemorating the Exodus through ritual meals and observance.",
+      "tags": [
+        "religious",
+        "jewish",
+        "family",
+        "spring"
+      ]
+    },
+    {
+      "name": "Hanukkah",
+      "alternate_names": [
+        "Chanukah"
+      ],
+      "country_or_countries": [
+        "Israel",
+        "Jewish diaspora"
+      ],
+      "region": "Middle East / Global diaspora",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "Religious festival",
+      "tradition": "Jewish",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "November-December; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Jewish festival of lights celebrated with menorahs and family gatherings.",
+      "tags": [
+        "lights",
+        "religious",
+        "jewish",
+        "family"
+      ]
+    },
+    {
+      "name": "Christmas",
+      "alternate_names": [
+        "Christmas season"
+      ],
+      "country_or_countries": [
+        "Global Christian world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Rome",
+      "latitude": 41.9028,
+      "longitude": 12.4964,
+      "festival_type": "Religious festival",
+      "tradition": "Christian",
+      "recurrence": "annual",
+      "date_notes": "December 25 and season surrounding it",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Global Christian festival commemorating the birth of Jesus, with many local traditions.",
+      "tags": [
+        "religious",
+        "christian",
+        "winter",
+        "family"
+      ]
+    },
+    {
+      "name": "Easter",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Global Christian world"
+      ],
+      "region": "Global",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "Religious festival",
+      "tradition": "Christian",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "March-April; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Central Christian feast commemorating the resurrection, often with major local observances.",
+      "tags": [
+        "religious",
+        "christian",
+        "spring"
+      ]
+    },
+    {
+      "name": "Epiphany / Three Kings",
+      "alternate_names": [
+        "Día de Reyes",
+        "Twelfth Night"
+      ],
+      "country_or_countries": [
+        "Spain",
+        "Latin America",
+        "Christian communities"
+      ],
+      "region": "Europe / Latin America",
+      "city_or_locality": "Madrid",
+      "latitude": 40.4168,
+      "longitude": -3.7038,
+      "festival_type": "Religious festival",
+      "tradition": "Christian",
+      "recurrence": "annual",
+      "date_notes": "January 6",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Christian feast with processions and gift-giving traditions in many regions.",
+      "tags": [
+        "religious",
+        "christian",
+        "parade",
+        "winter"
+      ]
+    },
+    {
+      "name": "Semana Santa",
+      "alternate_names": [
+        "Holy Week"
+      ],
+      "country_or_countries": [
+        "Spain",
+        "Guatemala",
+        "Philippines",
+        "Latin America"
+      ],
+      "region": "Europe / Latin America",
+      "city_or_locality": "Seville",
+      "latitude": 37.3891,
+      "longitude": -5.9845,
+      "festival_type": "Religious festival",
+      "tradition": "Christian",
+      "recurrence": "annual",
+      "date_notes": "Week before Easter",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Holy Week observances with major public processions in many Catholic regions.",
+      "tags": [
+        "religious",
+        "christian",
+        "procession"
+      ]
+    },
+    {
+      "name": "St. John's Eve",
+      "alternate_names": [
+        "Midsummer Eve",
+        "Noche de San Juan"
+      ],
+      "country_or_countries": [
+        "Spain",
+        "Portugal",
+        "Nordic and Baltic regions"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Alicante",
+      "latitude": 38.3452,
+      "longitude": -0.481,
+      "festival_type": "Solstice festival",
+      "tradition": "Christianized folk",
+      "recurrence": "annual",
+      "date_notes": "June 23-24",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Summer solstice fire and festivity traditions observed in many parts of Europe.",
+      "tags": [
+        "fire",
+        "solstice",
+        "summer",
+        "folk"
+      ]
+    },
+    {
+      "name": "Midsummer",
+      "alternate_names": [
+        "Juhannus",
+        "Midsommar"
+      ],
+      "country_or_countries": [
+        "Sweden",
+        "Finland",
+        "Nordic countries"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Stockholm",
+      "latitude": 59.3293,
+      "longitude": 18.0686,
+      "festival_type": "Solstice festival",
+      "tradition": "Nordic folk",
+      "recurrence": "annual",
+      "date_notes": "June",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Northern European summer solstice festival centered on bonfires, maypoles, and communal celebration.",
+      "tags": [
+        "solstice",
+        "summer",
+        "folk",
+        "dance"
+      ]
+    },
+    {
+      "name": "Sámi National Day Celebrations",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Norway",
+        "Sweden",
+        "Finland"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Kautokeino",
+      "latitude": 69.011,
+      "longitude": 23.0437,
+      "festival_type": "National / indigenous cultural festival",
+      "tradition": "Sámi",
+      "recurrence": "annual",
+      "date_notes": "February 6",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Celebration of Sámi identity, culture, and cross-border community.",
+      "tags": [
+        "indigenous",
+        "music",
+        "national"
+      ]
+    },
+    {
+      "name": "Oktoberfest",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Germany"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Munich",
+      "latitude": 48.1351,
+      "longitude": 11.582,
+      "festival_type": "Folk festival",
+      "tradition": "Bavarian cultural",
+      "recurrence": "annual",
+      "date_notes": "September-October",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Globally famous Bavarian folk festival rooted in local tradition and public festivity.",
+      "tags": [
+        "folk",
+        "beer",
+        "parade",
+        "food"
+      ]
+    },
+    {
+      "name": "Karneval",
+      "alternate_names": [
+        "Cologne Carnival"
+      ],
+      "country_or_countries": [
+        "Germany"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Cologne",
+      "latitude": 50.9375,
+      "longitude": 6.9603,
+      "festival_type": "Carnival",
+      "tradition": "Catholic / Rhineland folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major German carnival season with costumes, satire, and public parades.",
+      "tags": [
+        "carnival",
+        "costume",
+        "parade"
+      ]
+    },
+    {
+      "name": "Karneval der Kulturen",
+      "alternate_names": [
+        "Carnival of Cultures"
+      ],
+      "country_or_countries": [
+        "Germany"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Berlin",
+      "latitude": 52.52,
+      "longitude": 13.405,
+      "festival_type": "Contemporary cultural festival",
+      "tradition": "Multicultural civic",
+      "recurrence": "annual",
+      "date_notes": "Spring",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Berlin multicultural parade and festival celebrating diasporic cultural traditions.",
+      "tags": [
+        "parade",
+        "dance",
+        "multicultural"
+      ]
+    },
+    {
+      "name": "Venice Carnival",
+      "alternate_names": [
+        "Carnevale di Venezia"
+      ],
+      "country_or_countries": [
+        "Italy"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Venice",
+      "latitude": 45.4408,
+      "longitude": 12.3155,
+      "festival_type": "Carnival",
+      "tradition": "Italian / Catholic folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Historic masked carnival famous for costume traditions and public spectacle.",
+      "tags": [
+        "carnival",
+        "mask",
+        "costume"
+      ]
+    },
+    {
+      "name": "Palio di Siena",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Italy"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Siena",
+      "latitude": 43.3188,
+      "longitude": 11.3308,
+      "festival_type": "Traditional civic festival",
+      "tradition": "Italian civic / historical",
+      "recurrence": "biannual",
+      "date_notes": "July and August",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Historic horse-race festival expressing neighborhood identity and rivalry.",
+      "tags": [
+        "race",
+        "historical",
+        "civic"
+      ]
+    },
+    {
+      "name": "Scoppio del Carro",
+      "alternate_names": [
+        "Explosion of the Cart"
+      ],
+      "country_or_countries": [
+        "Italy"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Florence",
+      "latitude": 43.7696,
+      "longitude": 11.2558,
+      "festival_type": "Religious / civic festival",
+      "tradition": "Catholic / Florentine",
+      "recurrence": "annual",
+      "date_notes": "Easter Sunday",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Florentine Easter festival featuring a ceremonial cart and fireworks ritual.",
+      "tags": [
+        "religious",
+        "fire",
+        "easter"
+      ]
+    },
+    {
+      "name": "Las Fallas",
+      "alternate_names": [
+        "Falles"
+      ],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Valencia",
+      "latitude": 39.4699,
+      "longitude": -0.3763,
+      "festival_type": "Fire festival",
+      "tradition": "Valencian folk",
+      "recurrence": "annual",
+      "date_notes": "March",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Valencian festival of giant satirical sculptures, fireworks, and public burning.",
+      "tags": [
+        "fire",
+        "art",
+        "parade",
+        "heritage"
+      ]
+    },
+    {
+      "name": "La Tomatina",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Buñol",
+      "latitude": 39.4191,
+      "longitude": -0.7909,
+      "festival_type": "Folk festival",
+      "tradition": "Spanish civic",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": true,
+      "culturally_significant": false,
+      "heritage_recognized": false,
+      "summary": "Modern world-famous tomato-throwing festival in Buñol.",
+      "tags": [
+        "food",
+        "summer",
+        "street"
+      ]
+    },
+    {
+      "name": "Semana Grande",
+      "alternate_names": [
+        "Aste Nagusia"
+      ],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Bilbao",
+      "latitude": 43.263,
+      "longitude": -2.935,
+      "festival_type": "Civic festival",
+      "tradition": "Basque cultural",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large Basque city festival combining concerts, folk events, and public celebration.",
+      "tags": [
+        "music",
+        "civic",
+        "parade"
+      ]
+    },
+    {
+      "name": "Feria de Abril",
+      "alternate_names": [
+        "Seville Fair"
+      ],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Seville",
+      "latitude": 37.3891,
+      "longitude": -5.9845,
+      "festival_type": "Folk festival",
+      "tradition": "Andalusian",
+      "recurrence": "annual",
+      "date_notes": "Spring",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Andalusian fair known for flamenco dress, horses, casetas, and dance.",
+      "tags": [
+        "dance",
+        "music",
+        "horse",
+        "spring"
+      ]
+    },
+    {
+      "name": "Patum de Berga",
+      "alternate_names": [
+        "La Patum"
+      ],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Berga",
+      "latitude": 42.1018,
+      "longitude": 1.8463,
+      "festival_type": "Traditional festival",
+      "tradition": "Catalan",
+      "recurrence": "annual",
+      "date_notes": "Corpus Christi",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Catalan festival of giants, fire, and ritual performance during Corpus Christi.",
+      "tags": [
+        "fire",
+        "procession",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Surova",
+      "alternate_names": [
+        "Surva Festival"
+      ],
+      "country_or_countries": [
+        "Bulgaria"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Pernik",
+      "latitude": 42.6052,
+      "longitude": 23.0358,
+      "festival_type": "Winter masquerade festival",
+      "tradition": "Bulgarian folk",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Winter masquerade festival with masked performers and ritual processions.",
+      "tags": [
+        "mask",
+        "winter",
+        "folk",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Rose Festival of Kazanlak",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Bulgaria"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Kazanlak",
+      "latitude": 42.6167,
+      "longitude": 25.4,
+      "festival_type": "Harvest / civic festival",
+      "tradition": "Bulgarian cultural",
+      "recurrence": "annual",
+      "date_notes": "June",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Celebration of the rose harvest and regional identity in the Valley of Roses.",
+      "tags": [
+        "harvest",
+        "flowers",
+        "civic"
+      ]
+    },
+    {
+      "name": "Kukeri Festivals",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Bulgaria"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Yambol",
+      "latitude": 42.484,
+      "longitude": 26.5035,
+      "festival_type": "Masquerade festival",
+      "tradition": "Bulgarian folk",
+      "recurrence": "annual",
+      "date_notes": "Winter / pre-Lent season",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Masked ritual performances intended to ward off evil and welcome fertility.",
+      "tags": [
+        "mask",
+        "winter",
+        "folk"
+      ]
+    },
+    {
+      "name": "Kurentovanje",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Slovenia"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Ptuj",
+      "latitude": 46.42,
+      "longitude": 15.87,
+      "festival_type": "Carnival / masquerade festival",
+      "tradition": "Slovene folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Slovene carnival featuring Kurent/Korant figures and ritual masking traditions.",
+      "tags": [
+        "carnival",
+        "mask",
+        "folk",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Škofja Loka Passion Play",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Slovenia"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Škofja Loka",
+      "latitude": 46.1655,
+      "longitude": 14.3063,
+      "festival_type": "Religious performance festival",
+      "tradition": "Catholic / Slovene",
+      "recurrence": "periodic",
+      "date_notes": "Not annual; staged periodically",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Historic open-air passion play tradition in Slovenia.",
+      "tags": [
+        "religious",
+        "theatre",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Ride of the Kings",
+      "alternate_names": [
+        "Jízda králů"
+      ],
+      "country_or_countries": [
+        "Czech Republic"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Vlčnov",
+      "latitude": 49.0099,
+      "longitude": 17.5812,
+      "festival_type": "Traditional procession",
+      "tradition": "Moravian folk",
+      "recurrence": "annual",
+      "date_notes": "Late spring",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Moravian ritual procession featuring elaborate costumes and mounted participants.",
+      "tags": [
+        "procession",
+        "horse",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Burning of the Witches",
+      "alternate_names": [
+        "Čarodějnice"
+      ],
+      "country_or_countries": [
+        "Czech Republic"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Prague",
+      "latitude": 50.0755,
+      "longitude": 14.4378,
+      "festival_type": "Seasonal fire festival",
+      "tradition": "Czech folk",
+      "recurrence": "annual",
+      "date_notes": "April 30",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Springtime bonfire festival rooted in folk beliefs and community celebration.",
+      "tags": [
+        "fire",
+        "spring",
+        "folk"
+      ]
+    },
+    {
+      "name": "St. Lucia Day",
+      "alternate_names": [
+        "Saint Lucy's Day"
+      ],
+      "country_or_countries": [
+        "Sweden",
+        "Nordic countries"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Stockholm",
+      "latitude": 59.3293,
+      "longitude": 18.0686,
+      "festival_type": "Winter festival",
+      "tradition": "Christian / Nordic",
+      "recurrence": "annual",
+      "date_notes": "December 13",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival of light in the Nordic winter marked by processions and song.",
+      "tags": [
+        "winter",
+        "lights",
+        "song"
+      ]
+    },
+    {
+      "name": "Sankthans",
+      "alternate_names": [
+        "St. Hans Aften"
+      ],
+      "country_or_countries": [
+        "Denmark",
+        "Norway"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Copenhagen",
+      "latitude": 55.6761,
+      "longitude": 12.5683,
+      "festival_type": "Solstice festival",
+      "tradition": "Nordic folk",
+      "recurrence": "annual",
+      "date_notes": "June 23",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Nordic midsummer bonfire tradition linked to St. John's Eve.",
+      "tags": [
+        "solstice",
+        "fire",
+        "summer"
+      ]
+    },
+    {
+      "name": "Vappu",
+      "alternate_names": [
+        "Walpurgis Night / May Day in Finland"
+      ],
+      "country_or_countries": [
+        "Finland"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Helsinki",
+      "latitude": 60.1699,
+      "longitude": 24.9384,
+      "festival_type": "Spring festival",
+      "tradition": "Finnish civic / student tradition",
+      "recurrence": "annual",
+      "date_notes": "April 30-May 1",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Finnish spring and labor holiday with strong student and public celebration traditions.",
+      "tags": [
+        "spring",
+        "student",
+        "civic"
+      ]
+    },
+    {
+      "name": "Inti Raymi",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Peru"
+      ],
+      "region": "South America",
+      "city_or_locality": "Cusco",
+      "latitude": -13.5319,
+      "longitude": -71.9675,
+      "festival_type": "Solstice festival",
+      "tradition": "Andean / Inca revival",
+      "recurrence": "annual",
+      "date_notes": "June 24",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Andean solstice festival and reenactment tied to Inca heritage.",
+      "tags": [
+        "solstice",
+        "indigenous",
+        "historical"
+      ]
+    },
+    {
+      "name": "Qoyllur Rit'i",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Peru"
+      ],
+      "region": "South America",
+      "city_or_locality": "Ocongate",
+      "latitude": -13.6287,
+      "longitude": -71.3902,
+      "festival_type": "Pilgrimage festival",
+      "tradition": "Andean Catholic syncretic",
+      "recurrence": "annual",
+      "date_notes": "May-June",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "High-altitude Andean pilgrimage blending indigenous and Catholic traditions.",
+      "tags": [
+        "pilgrimage",
+        "mountain",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Virgen de la Candelaria",
+      "alternate_names": [
+        "Fiesta de la Candelaria"
+      ],
+      "country_or_countries": [
+        "Peru",
+        "Bolivia"
+      ],
+      "region": "South America",
+      "city_or_locality": "Puno",
+      "latitude": -15.8402,
+      "longitude": -70.0219,
+      "festival_type": "Religious festival",
+      "tradition": "Andean Catholic",
+      "recurrence": "annual",
+      "date_notes": "February",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Major Andean festival noted for dance troupes, music, and devotional expression.",
+      "tags": [
+        "dance",
+        "music",
+        "religious",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Carnaval de Oruro",
+      "alternate_names": [
+        "Oruro Carnival"
+      ],
+      "country_or_countries": [
+        "Bolivia"
+      ],
+      "region": "South America",
+      "city_or_locality": "Oruro",
+      "latitude": -17.9647,
+      "longitude": -67.106,
+      "festival_type": "Carnival",
+      "tradition": "Andean Catholic / folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Bolivian carnival famed for masked dances and strong indigenous-Catholic syncretism.",
+      "tags": [
+        "carnival",
+        "dance",
+        "mask",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Alasitas",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Bolivia"
+      ],
+      "region": "South America",
+      "city_or_locality": "La Paz",
+      "latitude": -16.4897,
+      "longitude": -68.1193,
+      "festival_type": "Folk fair / festival",
+      "tradition": "Andean",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Andean fair centered on miniatures symbolizing wishes for abundance and prosperity.",
+      "tags": [
+        "fair",
+        "folk",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Barranquilla Carnival",
+      "alternate_names": [
+        "Carnaval de Barranquilla"
+      ],
+      "country_or_countries": [
+        "Colombia"
+      ],
+      "region": "South America",
+      "city_or_locality": "Barranquilla",
+      "latitude": 10.9685,
+      "longitude": -74.7813,
+      "festival_type": "Carnival",
+      "tradition": "Caribbean Colombian",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Major Caribbean carnival blending European, African, and indigenous influences.",
+      "tags": [
+        "carnival",
+        "dance",
+        "music",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Carnival of Blacks and Whites",
+      "alternate_names": [
+        "Carnaval de Negros y Blancos"
+      ],
+      "country_or_countries": [
+        "Colombia"
+      ],
+      "region": "South America",
+      "city_or_locality": "Pasto",
+      "latitude": 1.2136,
+      "longitude": -77.2811,
+      "festival_type": "Carnival",
+      "tradition": "Andean Colombian",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Colombian carnival with public participation, artistic floats, and symbolic color play.",
+      "tags": [
+        "carnival",
+        "color",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Rio Carnival",
+      "alternate_names": [
+        "Carnaval do Rio"
+      ],
+      "country_or_countries": [
+        "Brazil"
+      ],
+      "region": "South America",
+      "city_or_locality": "Rio de Janeiro",
+      "latitude": -22.9068,
+      "longitude": -43.1729,
+      "festival_type": "Carnival",
+      "tradition": "Brazilian / Catholic season",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Globally famous carnival known for samba schools, parades, and street celebrations.",
+      "tags": [
+        "carnival",
+        "dance",
+        "music",
+        "parade"
+      ]
+    },
+    {
+      "name": "Parintins Folklore Festival",
+      "alternate_names": [
+        "Festival de Parintins"
+      ],
+      "country_or_countries": [
+        "Brazil"
+      ],
+      "region": "South America",
+      "city_or_locality": "Parintins",
+      "latitude": -2.6283,
+      "longitude": -56.7358,
+      "festival_type": "Folklore festival",
+      "tradition": "Amazonian Brazilian",
+      "recurrence": "annual",
+      "date_notes": "June",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Amazonian performance festival staging the Boi-Bumbá rivalry through music and spectacle.",
+      "tags": [
+        "music",
+        "dance",
+        "folk"
+      ]
+    },
+    {
+      "name": "Festa Junina",
+      "alternate_names": [
+        "São João Festival"
+      ],
+      "country_or_countries": [
+        "Brazil"
+      ],
+      "region": "South America",
+      "city_or_locality": "Campina Grande",
+      "latitude": -7.2306,
+      "longitude": -35.8811,
+      "festival_type": "Seasonal folk festival",
+      "tradition": "Brazilian Catholic / rural folk",
+      "recurrence": "annual",
+      "date_notes": "June",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Brazilian June festival season with bonfires, dance, and rural-themed celebration.",
+      "tags": [
+        "fire",
+        "dance",
+        "folk",
+        "winter"
+      ]
+    },
+    {
+      "name": "Bumba Meu Boi",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Brazil"
+      ],
+      "region": "South America",
+      "city_or_locality": "São Luís",
+      "latitude": -2.5307,
+      "longitude": -44.3068,
+      "festival_type": "Folk festival",
+      "tradition": "Brazilian folk",
+      "recurrence": "annual",
+      "date_notes": "June-July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Brazilian performance tradition blending music, dance, and dramatic storytelling.",
+      "tags": [
+        "music",
+        "dance",
+        "theatre",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Tapati Rapa Nui",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Chile"
+      ],
+      "region": "Oceania / South America",
+      "city_or_locality": "Hanga Roa",
+      "latitude": -27.1547,
+      "longitude": -109.4324,
+      "festival_type": "Indigenous cultural festival",
+      "tradition": "Rapa Nui",
+      "recurrence": "annual",
+      "date_notes": "February",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival of Rapa Nui culture featuring music, sport, and traditional arts.",
+      "tags": [
+        "indigenous",
+        "music",
+        "dance",
+        "island"
+      ]
+    },
+    {
+      "name": "Fiesta de la Tirana",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Chile"
+      ],
+      "region": "South America",
+      "city_or_locality": "La Tirana",
+      "latitude": -20.3502,
+      "longitude": -69.6518,
+      "festival_type": "Religious festival",
+      "tradition": "Andean Catholic",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Northern Chilean pilgrimage festival known for dance societies and colorful costume traditions.",
+      "tags": [
+        "pilgrimage",
+        "dance",
+        "religious"
+      ]
+    },
+    {
+      "name": "Día de los Muertos",
+      "alternate_names": [
+        "Day of the Dead"
+      ],
+      "country_or_countries": [
+        "Mexico"
+      ],
+      "region": "North America",
+      "city_or_locality": "Pátzcuaro",
+      "latitude": 19.5146,
+      "longitude": -101.6092,
+      "festival_type": "Ancestral festival",
+      "tradition": "Mexican / Catholic-Indigenous syncretic",
+      "recurrence": "annual",
+      "date_notes": "November 1-2",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Mexican remembrance festival centered on altars, gravesites, and honoring the dead.",
+      "tags": [
+        "ancestral",
+        "mask",
+        "food",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Guelaguetza",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Mexico"
+      ],
+      "region": "North America",
+      "city_or_locality": "Oaxaca",
+      "latitude": 17.0732,
+      "longitude": -96.7266,
+      "festival_type": "Indigenous cultural festival",
+      "tradition": "Oaxacan indigenous",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Oaxacan festival presenting regional dances, dress, and communal reciprocity traditions.",
+      "tags": [
+        "dance",
+        "indigenous",
+        "music"
+      ]
+    },
+    {
+      "name": "Danza de los Voladores",
+      "alternate_names": [
+        "Voladores de Papantla festival anchor"
+      ],
+      "country_or_countries": [
+        "Mexico"
+      ],
+      "region": "North America",
+      "city_or_locality": "Papantla",
+      "latitude": 20.4465,
+      "longitude": -97.3249,
+      "festival_type": "Ritual performance festival",
+      "tradition": "Totonac",
+      "recurrence": "annual / recurring performance",
+      "date_notes": "Multiple occasions; anchor for festival use",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Ritual performance involving descent from a tall pole, rooted in Totonac tradition.",
+      "tags": [
+        "indigenous",
+        "ritual",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Radish Festival",
+      "alternate_names": [
+        "Noche de Rábanos"
+      ],
+      "country_or_countries": [
+        "Mexico"
+      ],
+      "region": "North America",
+      "city_or_locality": "Oaxaca",
+      "latitude": 17.0732,
+      "longitude": -96.7266,
+      "festival_type": "Craft / food festival",
+      "tradition": "Oaxacan civic",
+      "recurrence": "annual",
+      "date_notes": "December 23",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Oaxacan festival of carved radish displays and seasonal civic celebration.",
+      "tags": [
+        "food",
+        "craft",
+        "winter"
+      ]
+    },
+    {
+      "name": "Carnival of Veracruz",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Mexico"
+      ],
+      "region": "North America",
+      "city_or_locality": "Veracruz",
+      "latitude": 19.1738,
+      "longitude": -96.1342,
+      "festival_type": "Carnival",
+      "tradition": "Mexican coastal",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Gulf coast carnival with music, parades, and public celebration.",
+      "tags": [
+        "carnival",
+        "music",
+        "parade"
+      ]
+    },
+    {
+      "name": "Mardi Gras",
+      "alternate_names": [
+        "Fat Tuesday"
+      ],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "North America",
+      "city_or_locality": "New Orleans",
+      "latitude": 29.9511,
+      "longitude": -90.0715,
+      "festival_type": "Carnival",
+      "tradition": "Creole / Catholic",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Famous New Orleans carnival season of parades, krewes, and public festivity.",
+      "tags": [
+        "carnival",
+        "parade",
+        "mask",
+        "music"
+      ]
+    },
+    {
+      "name": "Jazz Fest",
+      "alternate_names": [
+        "New Orleans Jazz & Heritage Festival"
+      ],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "North America",
+      "city_or_locality": "New Orleans",
+      "latitude": 29.9511,
+      "longitude": -90.0715,
+      "festival_type": "Music and heritage festival",
+      "tradition": "Louisiana cultural heritage",
+      "recurrence": "annual",
+      "date_notes": "Spring",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival emphasizing Louisiana music, food, and cultural heritage.",
+      "tags": [
+        "music",
+        "food",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Albuquerque International Balloon Fiesta",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "North America",
+      "city_or_locality": "Albuquerque",
+      "latitude": 35.0844,
+      "longitude": -106.6504,
+      "festival_type": "Modern civic festival",
+      "tradition": "Contemporary",
+      "recurrence": "annual",
+      "date_notes": "October",
+      "globally_famous": true,
+      "culturally_significant": false,
+      "heritage_recognized": false,
+      "summary": "Large contemporary balloon festival with strong visual identity.",
+      "tags": [
+        "modern",
+        "sky",
+        "balloons"
+      ]
+    },
+    {
+      "name": "Macy's Thanksgiving Parade",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "North America",
+      "city_or_locality": "New York City",
+      "latitude": 40.7128,
+      "longitude": -74.006,
+      "festival_type": "Civic parade",
+      "tradition": "American holiday culture",
+      "recurrence": "annual",
+      "date_notes": "November",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Iconic U.S. holiday parade connected to Thanksgiving traditions.",
+      "tags": [
+        "parade",
+        "holiday",
+        "civic"
+      ]
+    },
+    {
+      "name": "Burning Man",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "North America",
+      "city_or_locality": "Black Rock City",
+      "latitude": 40.7864,
+      "longitude": -119.2065,
+      "festival_type": "Contemporary cultural gathering",
+      "tradition": "Contemporary countercultural",
+      "recurrence": "annual",
+      "date_notes": "Late August to early September",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large temporary-city gathering focused on art, community, and participation.",
+      "tags": [
+        "art",
+        "desert",
+        "contemporary"
+      ]
+    },
+    {
+      "name": "Powwow Gatherings",
+      "alternate_names": [
+        "Powwow festival anchor"
+      ],
+      "country_or_countries": [
+        "United States",
+        "Canada"
+      ],
+      "region": "North America",
+      "city_or_locality": "Albuquerque",
+      "latitude": 35.0844,
+      "longitude": -106.6504,
+      "festival_type": "Indigenous cultural gathering",
+      "tradition": "Indigenous North American",
+      "recurrence": "recurring",
+      "date_notes": "Multiple dates and communities",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Pan-tribal and community Indigenous gatherings featuring dance, song, and social exchange.",
+      "tags": [
+        "indigenous",
+        "dance",
+        "song",
+        "community"
+      ]
+    },
+    {
+      "name": "Calgary Stampede",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Canada"
+      ],
+      "region": "North America",
+      "city_or_locality": "Calgary",
+      "latitude": 51.0447,
+      "longitude": -114.0719,
+      "festival_type": "Civic / heritage festival",
+      "tradition": "Western Canadian",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Canadian festival expressing rodeo, agricultural, and western heritage.",
+      "tags": [
+        "rodeo",
+        "civic",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Quebec Winter Carnival",
+      "alternate_names": [
+        "Carnaval de Québec"
+      ],
+      "country_or_countries": [
+        "Canada"
+      ],
+      "region": "North America",
+      "city_or_locality": "Quebec City",
+      "latitude": 46.8139,
+      "longitude": -71.208,
+      "festival_type": "Winter carnival",
+      "tradition": "Québécois civic",
+      "recurrence": "annual",
+      "date_notes": "Winter",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Winter carnival with parades, sculpture, and seasonal celebration in Quebec City.",
+      "tags": [
+        "winter",
+        "carnival",
+        "ice"
+      ]
+    },
+    {
+      "name": "Just for Laughs",
+      "alternate_names": [
+        "Juste pour rire"
+      ],
+      "country_or_countries": [
+        "Canada"
+      ],
+      "region": "North America",
+      "city_or_locality": "Montreal",
+      "latitude": 45.5017,
+      "longitude": -73.5673,
+      "festival_type": "Arts festival",
+      "tradition": "Contemporary cultural",
+      "recurrence": "annual",
+      "date_notes": "Summer",
+      "globally_famous": true,
+      "culturally_significant": false,
+      "heritage_recognized": false,
+      "summary": "Globally known comedy festival based in Montreal.",
+      "tags": [
+        "arts",
+        "comedy",
+        "modern"
+      ]
+    },
+    {
+      "name": "Junkanoo",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Bahamas"
+      ],
+      "region": "Caribbean",
+      "city_or_locality": "Nassau",
+      "latitude": 25.0443,
+      "longitude": -77.3504,
+      "festival_type": "Street festival",
+      "tradition": "Bahamian",
+      "recurrence": "annual",
+      "date_notes": "December-January",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Bahamian parade tradition of music, costume, and dance with deep cultural significance.",
+      "tags": [
+        "parade",
+        "music",
+        "dance",
+        "mask"
+      ]
+    },
+    {
+      "name": "Trinidad Carnival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Trinidad and Tobago"
+      ],
+      "region": "Caribbean",
+      "city_or_locality": "Port of Spain",
+      "latitude": 10.6549,
+      "longitude": -61.5019,
+      "festival_type": "Carnival",
+      "tradition": "Trinidadian",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Influential Caribbean carnival famed for masquerade, calypso, and soca culture.",
+      "tags": [
+        "carnival",
+        "music",
+        "dance",
+        "mask"
+      ]
+    },
+    {
+      "name": "Crop Over",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Barbados"
+      ],
+      "region": "Caribbean",
+      "city_or_locality": "Bridgetown",
+      "latitude": 13.0975,
+      "longitude": -59.6167,
+      "festival_type": "Harvest festival",
+      "tradition": "Barbadian",
+      "recurrence": "annual",
+      "date_notes": "Summer",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Barbadian harvest festival with music, masquerade, and national celebration.",
+      "tags": [
+        "harvest",
+        "music",
+        "carnival"
+      ]
+    },
+    {
+      "name": "Caribana",
+      "alternate_names": [
+        "Toronto Caribbean Carnival"
+      ],
+      "country_or_countries": [
+        "Canada"
+      ],
+      "region": "North America / Caribbean diaspora",
+      "city_or_locality": "Toronto",
+      "latitude": 43.6532,
+      "longitude": -79.3832,
+      "festival_type": "Diaspora carnival",
+      "tradition": "Caribbean diaspora",
+      "recurrence": "annual",
+      "date_notes": "Summer",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large Caribbean diaspora carnival in Toronto with masquerade and music traditions.",
+      "tags": [
+        "carnival",
+        "diaspora",
+        "music",
+        "parade"
+      ]
+    },
+    {
+      "name": "Notting Hill Carnival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe / Caribbean diaspora",
+      "city_or_locality": "London",
+      "latitude": 51.5072,
+      "longitude": -0.1276,
+      "festival_type": "Diaspora carnival",
+      "tradition": "Caribbean diaspora",
+      "recurrence": "annual",
+      "date_notes": "August bank holiday weekend",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Caribbean diaspora carnival in London rooted in community expression and music.",
+      "tags": [
+        "carnival",
+        "diaspora",
+        "music",
+        "parade"
+      ]
+    },
+    {
+      "name": "Edinburgh Festival Fringe",
+      "alternate_names": [
+        "Fringe"
+      ],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Edinburgh",
+      "latitude": 55.9533,
+      "longitude": -3.1883,
+      "festival_type": "Arts festival",
+      "tradition": "Contemporary performing arts",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major global arts festival anchored in open-access performance culture.",
+      "tags": [
+        "arts",
+        "theatre",
+        "comedy",
+        "music"
+      ]
+    },
+    {
+      "name": "Up Helly Aa",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Lerwick",
+      "latitude": 60.155,
+      "longitude": -1.145,
+      "festival_type": "Fire festival",
+      "tradition": "Shetland cultural",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Shetland fire festival with torchlit procession and Viking-themed spectacle.",
+      "tags": [
+        "fire",
+        "winter",
+        "parade"
+      ]
+    },
+    {
+      "name": "Bonfire Night",
+      "alternate_names": [
+        "Guy Fawkes Night"
+      ],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Lewes",
+      "latitude": 50.8739,
+      "longitude": -0.0088,
+      "festival_type": "Commemorative fire festival",
+      "tradition": "British civic",
+      "recurrence": "annual",
+      "date_notes": "November 5",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "British commemoration marked by bonfires, fireworks, and local society traditions.",
+      "tags": [
+        "fire",
+        "fireworks",
+        "civic"
+      ]
+    },
+    {
+      "name": "St Patrick's Festival",
+      "alternate_names": [
+        "St Patrick's Day"
+      ],
+      "country_or_countries": [
+        "Ireland",
+        "Global Irish diaspora"
+      ],
+      "region": "Europe / Global diaspora",
+      "city_or_locality": "Dublin",
+      "latitude": 53.3498,
+      "longitude": -6.2603,
+      "festival_type": "National / religious festival",
+      "tradition": "Irish",
+      "recurrence": "annual",
+      "date_notes": "March 17 and surrounding days",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Irish national and diaspora celebration with parades, music, and public festivities.",
+      "tags": [
+        "national",
+        "parade",
+        "diaspora",
+        "music"
+      ]
+    },
+    {
+      "name": "Puck Fair",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Ireland"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Killorglin",
+      "latitude": 52.1008,
+      "longitude": -9.7874,
+      "festival_type": "Folk fair",
+      "tradition": "Irish folk",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Historic Irish fair and folk festival centered around symbolic crowning traditions.",
+      "tags": [
+        "fair",
+        "folk",
+        "animal"
+      ]
+    },
+    {
+      "name": "Glastonbury Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Pilton",
+      "latitude": 51.1569,
+      "longitude": -2.5855,
+      "festival_type": "Music and arts festival",
+      "tradition": "Contemporary British",
+      "recurrence": "annual (with occasional fallow years)",
+      "date_notes": "June",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Highly influential contemporary music and arts festival with broad cultural reach.",
+      "tags": [
+        "music",
+        "arts",
+        "modern"
+      ]
+    },
+    {
+      "name": "Timkat",
+      "alternate_names": [
+        "Epiphany in Ethiopia"
+      ],
+      "country_or_countries": [
+        "Ethiopia"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Gondar",
+      "latitude": 12.603,
+      "longitude": 37.4521,
+      "festival_type": "Religious festival",
+      "tradition": "Ethiopian Orthodox Christian",
+      "recurrence": "annual",
+      "date_notes": "January 19 (or 20 in leap years)",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Ethiopian Orthodox Epiphany celebration with processions, song, and ceremonial reenactment.",
+      "tags": [
+        "religious",
+        "procession",
+        "water",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Meskel",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Ethiopia"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Addis Ababa",
+      "latitude": 8.9806,
+      "longitude": 38.7578,
+      "festival_type": "Religious festival",
+      "tradition": "Ethiopian Orthodox Christian",
+      "recurrence": "annual",
+      "date_notes": "September 27 or 28",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Festival of the Finding of the True Cross marked by bonfires and public celebration.",
+      "tags": [
+        "religious",
+        "fire",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Gerewol",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Niger",
+        "Chad"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Ingall",
+      "latitude": 17.02,
+      "longitude": 8.03,
+      "festival_type": "Courtship festival",
+      "tradition": "Wodaabe",
+      "recurrence": "annual",
+      "date_notes": "Rainy season; local variation",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Wodaabe gathering and courtship festival known for dance, adornment, and social selection.",
+      "tags": [
+        "dance",
+        "indigenous",
+        "courtship"
+      ]
+    },
+    {
+      "name": "Festival au Désert",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Mali"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Essakane",
+      "latitude": 16.8667,
+      "longitude": -3.0167,
+      "festival_type": "Music festival",
+      "tradition": "Tuareg / Saharan cultural",
+      "recurrence": "historically annual",
+      "date_notes": "Often January; security conditions affected continuity",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Influential Saharan music and cultural festival associated with Tuareg traditions.",
+      "tags": [
+        "music",
+        "desert",
+        "indigenous"
+      ]
+    },
+    {
+      "name": "Odwira",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Ghana"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Akropong",
+      "latitude": 5.9746,
+      "longitude": -0.0858,
+      "festival_type": "Traditional festival",
+      "tradition": "Akan",
+      "recurrence": "annual",
+      "date_notes": "September-October",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Akan festival of purification, remembrance, and community renewal.",
+      "tags": [
+        "ancestral",
+        "community",
+        "traditional"
+      ]
+    },
+    {
+      "name": "Homowo",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Ghana"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Accra",
+      "latitude": 5.6037,
+      "longitude": -0.187,
+      "festival_type": "Harvest / remembrance festival",
+      "tradition": "Ga",
+      "recurrence": "annual",
+      "date_notes": "August-September",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Ga festival commemorating overcoming famine through harvest celebration and ritual.",
+      "tags": [
+        "harvest",
+        "community",
+        "traditional"
+      ]
+    },
+    {
+      "name": "Aboakyer",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Ghana"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Winneba",
+      "latitude": 5.3511,
+      "longitude": -0.6231,
+      "festival_type": "Traditional festival",
+      "tradition": "Effutu",
+      "recurrence": "annual",
+      "date_notes": "May",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Winneba festival marked by public ceremony, hunting competition, and community identity.",
+      "tags": [
+        "traditional",
+        "community",
+        "hunt"
+      ]
+    },
+    {
+      "name": "FESPACO",
+      "alternate_names": [
+        "Panafrican Film and Television Festival of Ouagadougou"
+      ],
+      "country_or_countries": [
+        "Burkina Faso"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Ouagadougou",
+      "latitude": 12.3714,
+      "longitude": -1.5197,
+      "festival_type": "Film / arts festival",
+      "tradition": "Pan-African cultural",
+      "recurrence": "biennial",
+      "date_notes": "Varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Flagship African film festival with continental cultural importance.",
+      "tags": [
+        "film",
+        "arts",
+        "africa"
+      ]
+    },
+    {
+      "name": "Mawazine",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Morocco"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Rabat",
+      "latitude": 34.0209,
+      "longitude": -6.8416,
+      "festival_type": "Music festival",
+      "tradition": "Contemporary Moroccan",
+      "recurrence": "annual",
+      "date_notes": "May-June",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large music festival in Morocco with strong national and international profile.",
+      "tags": [
+        "music",
+        "arts",
+        "modern"
+      ]
+    },
+    {
+      "name": "Timimoun Sebeiba",
+      "alternate_names": [
+        "Sebeiba"
+      ],
+      "country_or_countries": [
+        "Algeria"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Djanet",
+      "latitude": 24.5542,
+      "longitude": 9.4853,
+      "festival_type": "Ritual festival",
+      "tradition": "Tuareg",
+      "recurrence": "annual (Islamic month of Muharram)",
+      "date_notes": "Date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Tuareg ritual performance and social reconciliation festival in Algeria.",
+      "tags": [
+        "dance",
+        "indigenous",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Mouloud of Tlemcen",
+      "alternate_names": [
+        "Mawlid in Tlemcen"
+      ],
+      "country_or_countries": [
+        "Algeria"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Tlemcen",
+      "latitude": 34.8828,
+      "longitude": -1.3167,
+      "festival_type": "Religious festival",
+      "tradition": "Islamic / Maghrebi",
+      "recurrence": "annual (lunar)",
+      "date_notes": "Date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Regional Mawlid celebrations with strong local cultural expression.",
+      "tags": [
+        "religious",
+        "music",
+        "islamic"
+      ]
+    },
+    {
+      "name": "Aswan Sun Festival",
+      "alternate_names": [
+        "Abu Simbel Sun Festival"
+      ],
+      "country_or_countries": [
+        "Egypt"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Abu Simbel",
+      "latitude": 22.3372,
+      "longitude": 31.6258,
+      "festival_type": "Solar / heritage festival",
+      "tradition": "Egyptian cultural",
+      "recurrence": "biannual",
+      "date_notes": "February 22 and October 22",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Celebration tied to the sun alignment at Abu Simbel temple.",
+      "tags": [
+        "solar",
+        "heritage",
+        "historical"
+      ]
+    },
+    {
+      "name": "Gnaoua World Music Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Morocco"
+      ],
+      "region": "Africa",
+      "city_or_locality": "Essaouira",
+      "latitude": 31.5085,
+      "longitude": -9.7595,
+      "festival_type": "Music festival",
+      "tradition": "Gnaoua / Moroccan",
+      "recurrence": "annual",
+      "date_notes": "June",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival centered on Gnaoua music traditions and intercultural collaboration.",
+      "tags": [
+        "music",
+        "dance",
+        "africa"
+      ]
+    },
+    {
+      "name": "Pasifika Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "New Zealand"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Auckland",
+      "latitude": -36.8509,
+      "longitude": 174.7645,
+      "festival_type": "Cultural festival",
+      "tradition": "Pacific diaspora",
+      "recurrence": "annual",
+      "date_notes": "March",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Pacific cultural festival in Auckland showcasing dance, music, and food traditions.",
+      "tags": [
+        "diaspora",
+        "dance",
+        "music",
+        "pacific"
+      ]
+    },
+    {
+      "name": "Te Matatini",
+      "alternate_names": [],
+      "country_or_countries": [
+        "New Zealand"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Rotorua",
+      "latitude": -38.1368,
+      "longitude": 176.2497,
+      "festival_type": "Performing arts festival",
+      "tradition": "Māori",
+      "recurrence": "biennial",
+      "date_notes": "Varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Premier Māori performing arts festival centered on kapa haka.",
+      "tags": [
+        "indigenous",
+        "dance",
+        "song",
+        "arts"
+      ]
+    },
+    {
+      "name": "Matariki",
+      "alternate_names": [
+        "Māori New Year"
+      ],
+      "country_or_countries": [
+        "New Zealand"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Wellington",
+      "latitude": -41.2866,
+      "longitude": 174.7762,
+      "festival_type": "New Year",
+      "tradition": "Māori",
+      "recurrence": "annual",
+      "date_notes": "Mid-winter; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Māori new year marked by remembrance, celebration, and future planning.",
+      "tags": [
+        "new_year",
+        "indigenous",
+        "winter",
+        "stars"
+      ]
+    },
+    {
+      "name": "Heiva i Tahiti",
+      "alternate_names": [],
+      "country_or_countries": [
+        "French Polynesia"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Papeete",
+      "latitude": -17.5516,
+      "longitude": -149.5585,
+      "festival_type": "Cultural festival",
+      "tradition": "Polynesian",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Polynesian festival of dance, music, and traditional sports.",
+      "tags": [
+        "dance",
+        "music",
+        "island",
+        "indigenous"
+      ]
+    },
+    {
+      "name": "Merrie Monarch Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "United States"
+      ],
+      "region": "Oceania / Hawaii",
+      "city_or_locality": "Hilo",
+      "latitude": 19.7076,
+      "longitude": -155.0816,
+      "festival_type": "Cultural festival",
+      "tradition": "Native Hawaiian",
+      "recurrence": "annual",
+      "date_notes": "Spring",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Premier hula festival dedicated to Native Hawaiian cultural practice.",
+      "tags": [
+        "dance",
+        "indigenous",
+        "arts"
+      ]
+    },
+    {
+      "name": "Garma Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Australia"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Gulkula",
+      "latitude": -12.723,
+      "longitude": 136.784,
+      "festival_type": "Indigenous cultural festival",
+      "tradition": "Yolŋu",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Yolŋu cultural gathering focused on knowledge exchange, ceremony, and arts.",
+      "tags": [
+        "indigenous",
+        "arts",
+        "community",
+        "australia"
+      ]
+    },
+    {
+      "name": "Parrtjima",
+      "alternate_names": [
+        "Festival in Light"
+      ],
+      "country_or_countries": [
+        "Australia"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Alice Springs",
+      "latitude": -23.698,
+      "longitude": 133.8807,
+      "festival_type": "Arts festival",
+      "tradition": "Aboriginal Australian / contemporary",
+      "recurrence": "annual",
+      "date_notes": "April",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival showcasing contemporary Aboriginal light art and storytelling.",
+      "tags": [
+        "indigenous",
+        "light",
+        "arts"
+      ]
+    },
+    {
+      "name": "Sydney Gay and Lesbian Mardi Gras",
+      "alternate_names": [
+        "Sydney Mardi Gras"
+      ],
+      "country_or_countries": [
+        "Australia"
+      ],
+      "region": "Oceania",
+      "city_or_locality": "Sydney",
+      "latitude": -33.8688,
+      "longitude": 151.2093,
+      "festival_type": "Pride / cultural festival",
+      "tradition": "LGBTQ+ civic culture",
+      "recurrence": "annual",
+      "date_notes": "February-March",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Globally known pride festival and parade with major cultural significance in Australia.",
+      "tags": [
+        "parade",
+        "pride",
+        "night",
+        "civic"
+      ]
+    },
+    {
+      "name": "National Eisteddfod",
+      "alternate_names": [
+        "Eisteddfod Genedlaethol"
+      ],
+      "country_or_countries": [
+        "United Kingdom"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Cardiff",
+      "latitude": 51.4816,
+      "longitude": -3.1791,
+      "festival_type": "Arts and language festival",
+      "tradition": "Welsh",
+      "recurrence": "annual",
+      "date_notes": "August; host location rotates",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Welsh-language cultural festival focused on literature, music, and performance.",
+      "tags": [
+        "language",
+        "music",
+        "arts",
+        "national"
+      ]
+    },
+    {
+      "name": "Fasnacht",
+      "alternate_names": [
+        "Basel Fasnacht"
+      ],
+      "country_or_countries": [
+        "Switzerland"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Basel",
+      "latitude": 47.5596,
+      "longitude": 7.5886,
+      "festival_type": "Carnival",
+      "tradition": "Swiss / Alemannic",
+      "recurrence": "annual",
+      "date_notes": "After Ash Wednesday",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Unique Swiss carnival with masked groups, lanterns, and music.",
+      "tags": [
+        "carnival",
+        "mask",
+        "lanterns",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Fête de l'Escalade",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Switzerland"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Geneva",
+      "latitude": 46.2044,
+      "longitude": 6.1432,
+      "festival_type": "Historical civic festival",
+      "tradition": "Genevan",
+      "recurrence": "annual",
+      "date_notes": "December",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Genevan commemoration of the city's defense against attack in 1602.",
+      "tags": [
+        "historical",
+        "civic",
+        "winter"
+      ]
+    },
+    {
+      "name": "Aalst Carnival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Belgium"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Aalst",
+      "latitude": 50.936,
+      "longitude": 4.0355,
+      "festival_type": "Carnival",
+      "tradition": "Belgian folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Belgian carnival known for satire, giant figures, and public spectacle.",
+      "tags": [
+        "carnival",
+        "satire",
+        "parade"
+      ]
+    },
+    {
+      "name": "Carnival of Binche",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Belgium"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Binche",
+      "latitude": 50.4114,
+      "longitude": 4.1641,
+      "festival_type": "Carnival",
+      "tradition": "Belgian folk",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Historic Belgian carnival featuring Gilles masks and ritual performance.",
+      "tags": [
+        "carnival",
+        "mask",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Ommegang",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Belgium"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Brussels",
+      "latitude": 50.8503,
+      "longitude": 4.3517,
+      "festival_type": "Historical pageant",
+      "tradition": "Belgian historical",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Historical pageant and procession recalling early modern civic ceremony.",
+      "tags": [
+        "historical",
+        "procession",
+        "pageant"
+      ]
+    },
+    {
+      "name": "Carnaval de Nice",
+      "alternate_names": [
+        "Nice Carnival"
+      ],
+      "country_or_countries": [
+        "France"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Nice",
+      "latitude": 43.7102,
+      "longitude": 7.262,
+      "festival_type": "Carnival",
+      "tradition": "French Riviera civic",
+      "recurrence": "annual",
+      "date_notes": "February",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major French carnival known for parades, floats, and flower battles.",
+      "tags": [
+        "carnival",
+        "parade",
+        "flowers"
+      ]
+    },
+    {
+      "name": "Fête des Lumières",
+      "alternate_names": [
+        "Festival of Lights"
+      ],
+      "country_or_countries": [
+        "France"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Lyon",
+      "latitude": 45.764,
+      "longitude": 4.8357,
+      "festival_type": "Light festival",
+      "tradition": "Catholic / civic",
+      "recurrence": "annual",
+      "date_notes": "December",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Lyon's urban light festival rooted in devotional tradition and contemporary public art.",
+      "tags": [
+        "lights",
+        "art",
+        "winter"
+      ]
+    },
+    {
+      "name": "Festival Interceltique de Lorient",
+      "alternate_names": [],
+      "country_or_countries": [
+        "France"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Lorient",
+      "latitude": 47.7482,
+      "longitude": -3.3702,
+      "festival_type": "Cultural festival",
+      "tradition": "Celtic",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Large interceltic festival of music, dance, and heritage in Brittany.",
+      "tags": [
+        "music",
+        "dance",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Sardana and Catalan festivals",
+      "alternate_names": [
+        "La Mercè anchor"
+      ],
+      "country_or_countries": [
+        "Spain"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Barcelona",
+      "latitude": 41.3874,
+      "longitude": 2.1686,
+      "festival_type": "Urban cultural festival",
+      "tradition": "Catalan",
+      "recurrence": "annual",
+      "date_notes": "September",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Barcelona's major city festival with castellers, parades, and Catalan cultural expression.",
+      "tags": [
+        "civic",
+        "dance",
+        "parade",
+        "castells"
+      ]
+    },
+    {
+      "name": "Rosh Hashanah",
+      "alternate_names": [
+        "Jewish New Year"
+      ],
+      "country_or_countries": [
+        "Israel",
+        "Jewish diaspora"
+      ],
+      "region": "Global diaspora / Middle East",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "New Year",
+      "tradition": "Jewish",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Jewish new year observed with prayer, reflection, and family meals.",
+      "tags": [
+        "new_year",
+        "religious",
+        "jewish"
+      ]
+    },
+    {
+      "name": "Sukkot",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Israel",
+        "Jewish diaspora"
+      ],
+      "region": "Global diaspora / Middle East",
+      "city_or_locality": "Jerusalem",
+      "latitude": 31.7683,
+      "longitude": 35.2137,
+      "festival_type": "Harvest / religious festival",
+      "tradition": "Jewish",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "September-October; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Jewish harvest and pilgrimage festival marked by temporary shelters and ritual observance.",
+      "tags": [
+        "harvest",
+        "religious",
+        "jewish"
+      ]
+    },
+    {
+      "name": "Orthodox Easter in Corfu",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Greece"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Corfu",
+      "latitude": 39.6243,
+      "longitude": 19.9217,
+      "festival_type": "Religious festival",
+      "tradition": "Greek Orthodox",
+      "recurrence": "annual",
+      "date_notes": "Date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Corfu's Easter observances are known for music, processions, and pottery-smashing ritual.",
+      "tags": [
+        "religious",
+        "procession",
+        "easter"
+      ]
+    },
+    {
+      "name": "Apokries",
+      "alternate_names": [
+        "Greek Carnival"
+      ],
+      "country_or_countries": [
+        "Greece"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Patras",
+      "latitude": 38.2466,
+      "longitude": 21.7346,
+      "festival_type": "Carnival",
+      "tradition": "Greek folk / Orthodox season",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Greek carnival season, with Patras as the largest and best-known celebration.",
+      "tags": [
+        "carnival",
+        "parade",
+        "mask"
+      ]
+    },
+    {
+      "name": "Naadam",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Mongolia"
+      ],
+      "region": "Central Asia / East Asia",
+      "city_or_locality": "Ulaanbaatar",
+      "latitude": 47.8864,
+      "longitude": 106.9057,
+      "festival_type": "National / traditional sports festival",
+      "tradition": "Mongolian",
+      "recurrence": "annual",
+      "date_notes": "July 11-13",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Mongolian national festival of wrestling, horse racing, and archery.",
+      "tags": [
+        "sports",
+        "national",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Tsagaan Sar",
+      "alternate_names": [
+        "Mongolian Lunar New Year"
+      ],
+      "country_or_countries": [
+        "Mongolia"
+      ],
+      "region": "Central Asia / East Asia",
+      "city_or_locality": "Ulaanbaatar",
+      "latitude": 47.8864,
+      "longitude": 106.9057,
+      "festival_type": "New Year",
+      "tradition": "Mongolian",
+      "recurrence": "annual (lunisolar)",
+      "date_notes": "Date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Mongolian lunar new year centered on family visits and ritual hospitality.",
+      "tags": [
+        "new_year",
+        "family",
+        "steppe"
+      ]
+    },
+    {
+      "name": "Shashmaqom Festival",
+      "alternate_names": [
+        "Silk and Spices anchor"
+      ],
+      "country_or_countries": [
+        "Uzbekistan"
+      ],
+      "region": "Central Asia",
+      "city_or_locality": "Bukhara",
+      "latitude": 39.767,
+      "longitude": 64.4233,
+      "festival_type": "Music / cultural festival",
+      "tradition": "Central Asian",
+      "recurrence": "annual / recurring",
+      "date_notes": "Varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival anchor for Bukhara's traditional music, crafts, and silk road cultural display.",
+      "tags": [
+        "music",
+        "craft",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Navruz in Samarkand",
+      "alternate_names": [
+        "Nowruz in Uzbekistan"
+      ],
+      "country_or_countries": [
+        "Uzbekistan"
+      ],
+      "region": "Central Asia",
+      "city_or_locality": "Samarkand",
+      "latitude": 39.6542,
+      "longitude": 66.9597,
+      "festival_type": "New Year",
+      "tradition": "Persianate / Uzbek",
+      "recurrence": "annual",
+      "date_notes": "March 21",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Central Asian celebration of the spring equinox and new year.",
+      "tags": [
+        "new_year",
+        "spring",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Nauryz",
+      "alternate_names": [
+        "Kazakh New Year"
+      ],
+      "country_or_countries": [
+        "Kazakhstan"
+      ],
+      "region": "Central Asia",
+      "city_or_locality": "Almaty",
+      "latitude": 43.222,
+      "longitude": 76.8512,
+      "festival_type": "New Year",
+      "tradition": "Kazakh",
+      "recurrence": "annual",
+      "date_notes": "March",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Kazakh spring festival and new year celebrated with hospitality and public festivities.",
+      "tags": [
+        "new_year",
+        "spring",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Sade Marghi",
+      "alternate_names": [
+        "Eagle Festival"
+      ],
+      "country_or_countries": [
+        "Mongolia"
+      ],
+      "region": "Central Asia",
+      "city_or_locality": "Ölgii",
+      "latitude": 48.9683,
+      "longitude": 89.9625,
+      "festival_type": "Traditional skills festival",
+      "tradition": "Kazakh-Mongolian",
+      "recurrence": "annual",
+      "date_notes": "October",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival highlighting traditional eagle hunting and steppe cultural practices.",
+      "tags": [
+        "indigenous",
+        "animal",
+        "skills"
+      ]
+    },
+    {
+      "name": "Hemis Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Hemis",
+      "latitude": 33.8611,
+      "longitude": 77.583,
+      "festival_type": "Religious festival",
+      "tradition": "Tibetan Buddhist",
+      "recurrence": "annual",
+      "date_notes": "June-July; lunar variation",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Ladakhi monastery festival known for masked dances and Buddhist ritual performance.",
+      "tags": [
+        "buddhist",
+        "dance",
+        "mask",
+        "mountain"
+      ]
+    },
+    {
+      "name": "Saga Dawa",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Tibet",
+        "Himalayan Buddhist communities"
+      ],
+      "region": "Asia",
+      "city_or_locality": "Lhasa",
+      "latitude": 29.652,
+      "longitude": 91.1721,
+      "festival_type": "Religious festival",
+      "tradition": "Tibetan Buddhist",
+      "recurrence": "annual (lunar)",
+      "date_notes": "May-June; date varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Major Tibetan Buddhist observance linked to the Buddha's life events.",
+      "tags": [
+        "buddhist",
+        "pilgrimage",
+        "mountain"
+      ]
+    },
+    {
+      "name": "Thaipusam",
+      "alternate_names": [],
+      "country_or_countries": [
+        "India",
+        "Malaysia",
+        "Singapore"
+      ],
+      "region": "South Asia / Southeast Asia",
+      "city_or_locality": "Batu Caves",
+      "latitude": 3.2379,
+      "longitude": 101.684,
+      "festival_type": "Religious festival",
+      "tradition": "Tamil Hindu",
+      "recurrence": "annual (lunar)",
+      "date_notes": "January-February; date varies",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Tamil Hindu festival marked by pilgrimage, devotion, and acts of penance.",
+      "tags": [
+        "hindu",
+        "pilgrimage",
+        "religious"
+      ]
+    },
+    {
+      "name": "Noche de San Juan",
+      "alternate_names": [
+        "San Juan Festival in Puerto Rico"
+      ],
+      "country_or_countries": [
+        "Puerto Rico"
+      ],
+      "region": "Caribbean",
+      "city_or_locality": "San Juan",
+      "latitude": 18.4655,
+      "longitude": -66.1057,
+      "festival_type": "Solstice / saint's festival",
+      "tradition": "Puerto Rican",
+      "recurrence": "annual",
+      "date_notes": "June 23-24",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Beach- and community-centered midsummer celebration in Puerto Rico.",
+      "tags": [
+        "solstice",
+        "water",
+        "saint",
+        "summer"
+      ]
+    },
+    {
+      "name": "Maslenitsa",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Russia",
+        "Eastern Europe"
+      ],
+      "region": "Europe / Eurasia",
+      "city_or_locality": "Moscow",
+      "latitude": 55.7558,
+      "longitude": 37.6173,
+      "festival_type": "Pre-Lenten festival",
+      "tradition": "Slavic folk / Orthodox",
+      "recurrence": "annual",
+      "date_notes": "Before Lent",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Slavic farewell-to-winter festival with pancakes, fire, and folk celebration.",
+      "tags": [
+        "winter",
+        "food",
+        "fire",
+        "folk"
+      ]
+    },
+    {
+      "name": "Ivana Kupala",
+      "alternate_names": [
+        "Kupala Night"
+      ],
+      "country_or_countries": [
+        "Ukraine",
+        "Belarus",
+        "Poland",
+        "Slavic regions"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Kyiv",
+      "latitude": 50.4501,
+      "longitude": 30.5234,
+      "festival_type": "Solstice festival",
+      "tradition": "Slavic folk",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Slavic midsummer festival associated with water, fire, and fertility rites.",
+      "tags": [
+        "solstice",
+        "fire",
+        "water",
+        "folk"
+      ]
+    },
+    {
+      "name": "Surva Festival",
+      "alternate_names": [
+        "International Festival of Masquerade Games"
+      ],
+      "country_or_countries": [
+        "Bulgaria"
+      ],
+      "region": "Europe",
+      "city_or_locality": "Pernik",
+      "latitude": 42.6052,
+      "longitude": 23.0358,
+      "festival_type": "Masquerade festival",
+      "tradition": "Bulgarian folk",
+      "recurrence": "annual",
+      "date_notes": "January",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Bulgarian masquerade festival featuring ritual costuming and performance.",
+      "tags": [
+        "mask",
+        "folk",
+        "winter",
+        "heritage"
+      ]
+    },
+    {
+      "name": "Day of the Horse",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Kyrgyzstan"
+      ],
+      "region": "Central Asia",
+      "city_or_locality": "Bishkek",
+      "latitude": 42.8746,
+      "longitude": 74.5698,
+      "festival_type": "Traditional sports / horse culture festival",
+      "tradition": "Kyrgyz",
+      "recurrence": "annual / recurring",
+      "date_notes": "Varies",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival anchor representing Kyrgyz horse culture and nomadic traditions.",
+      "tags": [
+        "horse",
+        "sports",
+        "nomadic"
+      ]
+    },
+    {
+      "name": "Baliem Valley Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Indonesia"
+      ],
+      "region": "Oceania / Southeast Asia",
+      "city_or_locality": "Wamena",
+      "latitude": -4.0947,
+      "longitude": 138.952,
+      "festival_type": "Indigenous cultural festival",
+      "tradition": "Papuan highland cultures",
+      "recurrence": "annual",
+      "date_notes": "August",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Festival presenting Papuan highland performance, ritual dress, and traditional skills.",
+      "tags": [
+        "indigenous",
+        "dance",
+        "mountain"
+      ]
+    },
+    {
+      "name": "Shandur Polo Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Pakistan"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Shandur Pass",
+      "latitude": 36.2025,
+      "longitude": 72.9892,
+      "festival_type": "Traditional sports festival",
+      "tradition": "Chitral / Gilgit-Baltistan",
+      "recurrence": "annual",
+      "date_notes": "July",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "High-altitude polo festival in northern Pakistan combining sport and mountain culture.",
+      "tags": [
+        "sports",
+        "mountain",
+        "horse"
+      ]
+    },
+    {
+      "name": "Basant",
+      "alternate_names": [
+        "Spring Kite Festival"
+      ],
+      "country_or_countries": [
+        "Pakistan",
+        "India"
+      ],
+      "region": "South Asia",
+      "city_or_locality": "Lahore",
+      "latitude": 31.5204,
+      "longitude": 74.3587,
+      "festival_type": "Spring festival",
+      "tradition": "Punjabi cultural",
+      "recurrence": "historically annual",
+      "date_notes": "February; variable and restricted in some places",
+      "globally_famous": false,
+      "culturally_significant": true,
+      "heritage_recognized": false,
+      "summary": "Spring kite-flying festival historically central to Punjabi urban culture.",
+      "tags": [
+        "spring",
+        "kite",
+        "city"
+      ]
+    },
+    {
+      "name": "Cheung Chau Bun Festival",
+      "alternate_names": [],
+      "country_or_countries": [
+        "Hong Kong"
+      ],
+      "region": "East Asia",
+      "city_or_locality": "Cheung Chau",
+      "latitude": 22.2087,
+      "longitude": 114.0301,
+      "festival_type": "Traditional festival",
+      "tradition": "Hong Kong folk / Taoist",
+      "recurrence": "annual",
+      "date_notes": "April-May",
+      "globally_famous": true,
+      "culturally_significant": true,
+      "heritage_recognized": true,
+      "summary": "Hong Kong island festival featuring bun towers, parades, and Taoist ritual tradition.",
+      "tags": [
+        "parade",
+        "religious",
+        "heritage",
+        "island"
+      ]
+    }
+  ]
+}
