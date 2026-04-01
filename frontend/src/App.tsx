@@ -1,10 +1,12 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import maplibregl, { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { TravelStatsPanel } from './TravelStatsPanel';
+import { buildTravelStatsModel } from './travelStats';
 
 type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
 type ActiveProfile = number | 'all' | null;
-type ListScope = 'all' | 'visited' | 'unvisited';
+type ListScope = 'all' | 'visited' | 'unvisited' | 'visited_countries';
 type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
 type Place = {
   id: string;
@@ -15,9 +17,19 @@ type Place = {
   lat?: number;
   lon?: number;
   airport_code?: string;
+  airport_type?: string;
   location?: string;
   search_location?: string;
   category?: string;
+  timezone?: string;
+  elevation_m?: number | null;
+  feature_code?: string;
+  feature_class?: string;
+  population?: number | null;
+  area_sqkm?: number | null;
+  continent?: string;
+  country_codes?: string[] | null;
+  source?: string;
 };
 
 type PlacesResponse = {
@@ -782,6 +794,7 @@ function App() {
     state: [],
     city: [],
   });
+  const deferredSearch = useDeferredValue(search);
 
   const nextSuggestedProfileColor = useMemo(() => {
     const used = new Set(profiles.map((profile) => normalizeHexColor(profile.color)));
@@ -845,15 +858,47 @@ function App() {
     };
   }, [showSettingsOverlay]);
 
+  const sortedPlaces = useMemo<Record<PlaceType, Place[]>>(
+    () => ({
+      country: [...places.country].sort((a, b) => a.name.localeCompare(b.name)),
+      state: [...places.state].sort((a, b) => a.name.localeCompare(b.name)),
+      city: [...places.city].sort((a, b) => a.name.localeCompare(b.name)),
+      airport: [...places.airport].sort((a, b) => a.name.localeCompare(b.name)),
+      site: [...places.site].sort((a, b) => a.name.localeCompare(b.name)),
+    }),
+    [places],
+  );
+
+  const placeSearchTextByType = useMemo<Record<PlaceType, Map<string, string>>>(() => {
+    const buildSearchText = (type: PlaceType, place: Place) => {
+      if (type === 'state') {
+        const fallbackState = place.state_code || place.id.replace(/^state-[^-]+-/, '') || '';
+        return `${place.name || fallbackState} ${place.country_code || ''}`.toLowerCase();
+      }
+      if (type === 'airport') {
+        return `${place.name} ${place.airport_code ?? ''} ${place.search_location ?? ''}`.toLowerCase();
+      }
+      return place.name.toLowerCase();
+    };
+
+    return {
+      country: new Map(sortedPlaces.country.map((place) => [place.id, buildSearchText('country', place)])),
+      state: new Map(sortedPlaces.state.map((place) => [place.id, buildSearchText('state', place)])),
+      city: new Map(sortedPlaces.city.map((place) => [place.id, buildSearchText('city', place)])),
+      airport: new Map(sortedPlaces.airport.map((place) => [place.id, buildSearchText('airport', place)])),
+      site: new Map(sortedPlaces.site.map((place) => [place.id, buildSearchText('site', place)])),
+    };
+  }, [sortedPlaces]);
+
   const airportOptions = useMemo(() => {
-    return [...places.airport]
+    return [...sortedPlaces.airport]
       .filter((airport) => Boolean(airport.airport_code))
       .sort((a, b) => {
         const aa = `${a.name} ${a.airport_code ?? ''}`;
         const bb = `${b.name} ${b.airport_code ?? ''}`;
         return aa.localeCompare(bb);
       });
-  }, [places.airport]);
+  }, [sortedPlaces.airport]);
 
   const siteCategories = useMemo(() => {
     const categories = new Set(
@@ -893,13 +938,13 @@ function App() {
     const normalized = input.trim().toLowerCase();
     if (!normalized) return airportOptions.slice(0, 60);
     return airportOptions
-      .filter((airport) => {
-        const code = airport.airport_code?.toLowerCase() ?? '';
-        const haystack = `${airport.name.toLowerCase()} ${code} ${airport.search_location ?? ''}`;
-        return haystack.includes(normalized);
-      })
+      .filter((airport) => (placeSearchTextByType.airport.get(airport.id) ?? '').includes(normalized))
       .slice(0, 60);
   };
+
+  const airportAutocompleteOptions = useMemo(() => {
+    return airportAutocomplete(deferredSearch.airport);
+  }, [airportOptions, deferredSearch.airport, placeSearchTextByType]);
 
   const resolveAirportId = (value: string) => {
     const input = value.trim();
@@ -971,8 +1016,20 @@ function App() {
     return codes;
   }, [visitedIds]);
 
+  const getScopeOptions = (type: PlaceType) => {
+    const options: Array<{ value: ListScope; label: string }> = [
+      { value: 'all', label: 'All' },
+      { value: 'visited', label: 'Visited' },
+      { value: 'unvisited', label: 'Unvisited' },
+    ];
+    if (type === 'site') {
+      options.push({ value: 'visited_countries', label: 'In visited countries' });
+    }
+    return options;
+  };
+
   const visitedCountryScopeOptions = useMemo(() => {
-    const options = places.country
+    const options = sortedPlaces.country
       .filter((country) => country.country_code && visitedCountryCodes.has(country.country_code.toUpperCase()))
       .map((country) => ({
         code: (country.country_code || '').toUpperCase(),
@@ -980,7 +1037,7 @@ function App() {
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
     return options;
-  }, [places.country, visitedCountryCodes]);
+  }, [sortedPlaces.country, visitedCountryCodes]);
 
   const countryNameByCode = useMemo(() => {
     const map = new Map<string, string>();
@@ -1006,6 +1063,36 @@ function App() {
     });
     return map;
   }, [places.state]);
+
+  const isCollectiveDemoMode = profileId === null;
+  const isAttributedProfileAggregate = profileId === 'all';
+  const isMultiProfileView = isCollectiveDemoMode || isAttributedProfileAggregate;
+  const defaultVisuals = useMemo(() => createProfileVisuals(defaultProfileColor, themeMode), [themeMode]);
+  const activeVisits = useMemo(
+    () => (isMultiProfileView ? visits : visits.filter((visit) => visit.profile_id === profileId)),
+    [isMultiProfileView, visits, profileId],
+  );
+  const activeTrips = useMemo(
+    () => (isMultiProfileView ? tripLogs : tripLogs.filter((trip) => trip.profile_id === profileId)),
+    [isMultiProfileView, tripLogs, profileId],
+  );
+  const pointLookup = useMemo(
+    () => new Map([...places.city, ...places.airport, ...places.site].map((place) => [place.id, place] as const)),
+    [places.city, places.airport, places.site],
+  );
+  const stateVisitById = useMemo(
+    () => new Map(activeVisits.filter((visit) => visit.place_id.startsWith('state-')).map((visit) => [visit.place_id, visit] as const)),
+    [activeVisits],
+  );
+  const travelStatsModel = useMemo(
+    () =>
+      buildTravelStatsModel({
+        places,
+        visits: activeVisits,
+        tripLogs: activeTrips,
+      }),
+    [activeTrips, activeVisits, places],
+  );
 
   useEffect(() => {
     localStorage.setItem('tracker-theme', themeMode);
@@ -1124,7 +1211,7 @@ function App() {
 
   useEffect(() => {
     if (!canLoadAppData) return;
-    let isCancelled = false;
+    const controller = new AbortController();
     const loadAllPlaces = async (tab: (typeof tabs)[number]): Promise<Place[]> => {
       const airportParam = tab.type === 'airport' ? '&major_only=true' : '';
       const pageSizeByType: Record<PlaceType, number> = {
@@ -1142,6 +1229,7 @@ function App() {
       while (hasMore) {
         const response = await api<PlacesResponse>(
           `/api/places?type=${tab.type}&limit=${pageSize}&offset=${offset}&include_total=false${airportParam}`,
+          { signal: controller.signal },
         );
         allItems.push(...response.items);
         if (response.items.length === 0) break;
@@ -1152,18 +1240,36 @@ function App() {
       return allItems;
     };
 
-    tabs.forEach(async (tab) => {
-      try {
+    Promise.all(
+      tabs.map(async (tab) => {
         const items = await loadAllPlaces(tab);
-        if (isCancelled) return;
-        setPlaces((prev) => ({ ...prev, [tab.type]: items }));
-      } catch {
-        if (isCancelled) return;
-        setUiError(`Unable to load ${tab.label.toLowerCase()}.`);
-      }
-    });
+        return [tab.type, items] as const;
+      }),
+    )
+      .then((entries) => {
+        if (controller.signal.aborted) return;
+        setPlaces(
+          entries.reduce(
+            (acc, [type, items]) => {
+              acc[type] = items;
+              return acc;
+            },
+            {
+              country: [],
+              state: [],
+              city: [],
+              airport: [],
+              site: [],
+            } as Record<PlaceType, Place[]>,
+          ),
+        );
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
+        setUiError('Unable to load place lists.');
+      });
     return () => {
-      isCancelled = true;
+      controller.abort();
     };
   }, [canLoadAppData]);
 
@@ -1359,13 +1465,16 @@ function App() {
       }
     };
 
-    map.on('load', () => {
+    const handleLoad = () => {
       void initMapLayers();
-    });
+    };
 
-    map.on('error', (event) => {
+    const handleError = (event: { error: unknown }) => {
       console.error('MapLibre error', event.error);
-    });
+    };
+
+    map.on('load', handleLoad);
+    map.on('error', handleError);
 
     if (map.loaded()) {
       void initMapLayers();
@@ -1373,6 +1482,8 @@ function App() {
 
     mapRef.current = map;
     return () => {
+      map.off('load', handleLoad);
+      map.off('error', handleError);
       mapRef.current = null;
       map.remove();
     };
@@ -1419,32 +1530,14 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapReady) return;
-    void (async () => {
+    try {
       const countrySource = map.getSource('countries') as maplibregl.GeoJSONSource | undefined;
       const pointSource = map.getSource('points') as maplibregl.GeoJSONSource | undefined;
       const routeSource = map.getSource('trip-routes') as maplibregl.GeoJSONSource | undefined;
       const visitedStatesSource = map.getSource('visited-states') as maplibregl.GeoJSONSource | undefined;
-      const selectedRegionSource = map.getSource('selected-region') as maplibregl.GeoJSONSource | undefined;
-      if (
-        !countrySource ||
-        !pointSource ||
-        !routeSource ||
-        !visitedStatesSource ||
-        !selectedRegionSource ||
-        !countryGeoRef.current ||
-        !stateGeoRef.current
-      ) {
+      if (!countrySource || !pointSource || !routeSource || !visitedStatesSource || !countryGeoRef.current || !stateGeoRef.current) {
         return;
       }
-
-      const isCollectiveDemoMode = profileId === null;
-      const isAttributedProfileAggregate = profileId === 'all';
-      const isMultiProfileView = isCollectiveDemoMode || isAttributedProfileAggregate;
-      const activeVisits =
-        isMultiProfileView
-          ? visits
-          : visits.filter((visit) => visit.profile_id === profileId);
-      const defaultVisuals = createProfileVisuals(defaultProfileColor, themeMode);
 
       const countryColorById = new Map<string, string>();
       activeVisits.forEach((visit) => {
@@ -1467,15 +1560,7 @@ function App() {
       }));
       countrySource.setData({ type: 'FeatureCollection', features: countryFeatures } as any);
 
-      const pointLookup = new Map(
-        ['city', 'airport', 'site']
-          .flatMap((type) => places[type as PlaceType])
-          .map((place) => [place.id, place]),
-      );
-
-      const pointFeatures = Array.from(
-        new Map(activeVisits.map((visit) => [visit.place_id, visit])).values(),
-      )
+      const pointFeatures = Array.from(new Map(activeVisits.map((visit) => [visit.place_id, visit])).values())
         .map((visit) => {
           const place = pointLookup.get(visit.place_id);
           if (!place || place.lat === undefined || place.lon === undefined) return null;
@@ -1486,34 +1571,29 @@ function App() {
               : typeof profileId === 'number'
                 ? profileVisualsById.get(profileId) ?? defaultVisuals
                 : defaultVisuals;
-          const pointType = place.id.startsWith('city-')
-            ? 'city'
-            : place.id.startsWith('airport-')
-              ? 'airport'
-              : 'site';
-          const markerColor =
-            pointType === 'city' ? visuals.city : pointType === 'airport' ? visuals.airport : visuals.site;
+          const pointType = place.id.startsWith('city-') ? 'city' : place.id.startsWith('airport-') ? 'airport' : 'site';
+          const markerColor = pointType === 'city' ? visuals.city : pointType === 'airport' ? visuals.airport : visuals.site;
           const markerStroke = contrastingColor(markerColor);
 
           return {
             type: 'Feature',
             id: place.id,
             geometry: { type: 'Point', coordinates: [place.lon, place.lat] },
-          properties: {
-            name: place.name,
-            point_type: pointType,
-            marker_color: markerColor,
-            marker_stroke: markerStroke,
-            icon_id:
-              pointType === 'airport'
-                ? createAirportIconId(markerColor, markerStroke)
-                : pointType === 'site'
-                  ? createSiteIconId(markerColor, markerStroke)
-                  : null,
-          },
-        };
-      })
-      .filter(Boolean);
+            properties: {
+              name: place.name,
+              point_type: pointType,
+              marker_color: markerColor,
+              marker_stroke: markerStroke,
+              icon_id:
+                pointType === 'airport'
+                  ? createAirportIconId(markerColor, markerStroke)
+                  : pointType === 'site'
+                    ? createSiteIconId(markerColor, markerStroke)
+                    : null,
+            },
+          };
+        })
+        .filter(Boolean);
 
       const airportIcons = pointFeatures
         .filter(
@@ -1540,7 +1620,6 @@ function App() {
       pointSource.setData({ type: 'FeatureCollection', features: pointFeatures } as any);
 
       const stateMarkerColorById = new Map<string, string>();
-      const stateProfileIdById = new Map<string, number>();
       activeVisits.forEach((visit) => {
         if (!visit.place_id.startsWith('state-')) return;
         const visuals =
@@ -1550,13 +1629,11 @@ function App() {
               ? profileVisualsById.get(profileId) ?? defaultVisuals
               : defaultVisuals;
         stateMarkerColorById.set(visit.place_id, visuals.stateFill);
-        stateProfileIdById.set(visit.place_id, visit.profile_id);
       });
 
-      const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature]));
+      const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature] as const));
       const stateFeatures = Array.from(
-        new Map(activeVisits.filter((visit) => visit.place_id.startsWith('state-')).map((visit) => [visit.place_id, visit]))
-          .values(),
+        new Map(activeVisits.filter((visit) => visit.place_id.startsWith('state-')).map((visit) => [visit.place_id, visit])).values(),
       )
         .map((visit) => stateLookup.get(visit.place_id))
         .filter((feature): feature is MapFeatureCollection['features'][number] => Boolean(feature?.geometry))
@@ -1575,43 +1652,20 @@ function App() {
         });
       visitedStatesSource.setData({ type: 'FeatureCollection', features: stateFeatures } as any);
 
-      const selectedStateFeature =
-        selectedMapPlaceId && selectedMapPlaceId.startsWith('state-')
-          ? stateLookup.get(selectedMapPlaceId) ?? null
-          : null;
-      const selectedStateVisuals =
-        selectedStateFeature && isMultiProfileView
-          ? profileVisualsById.get(stateProfileIdById.get(selectedStateFeature.id) ?? -1) ?? defaultVisuals
-          : typeof profileId === 'number'
-            ? profileVisualsById.get(profileId) ?? defaultVisuals
-            : defaultVisuals;
-      selectedRegionSource.setData({
-        type: 'FeatureCollection',
-        features: selectedStateFeature
-          ? [
-              {
-                type: 'Feature',
-                id: selectedStateFeature.id,
-                geometry: selectedStateFeature.geometry,
-                properties: {
-                  ...selectedStateFeature.properties,
-                  selection_color: selectedStateVisuals.selectedRegion,
-                },
-              },
-            ]
-          : [],
-      } as any);
-
       const routeFeatures: Array<Record<string, unknown>> = [];
-      const activeTrips =
-        isMultiProfileView
-          ? tripLogs
-          : tripLogs.filter((trip) => trip.profile_id === profileId);
-
       activeTrips.forEach((trip) => {
-        for (let index = 1; index < trip.route_points.length; index += 1) {
-          const fromPoint = trip.route_points[index - 1];
-          const toPoint = trip.route_points[index];
+        const routePoints = Array.isArray(trip.route_points) ? trip.route_points : [];
+        for (let index = 1; index < routePoints.length; index += 1) {
+          const fromPoint = routePoints[index - 1];
+          const toPoint = routePoints[index];
+          if (
+            typeof fromPoint?.lat !== 'number' ||
+            typeof fromPoint?.lon !== 'number' ||
+            typeof toPoint?.lat !== 'number' ||
+            typeof toPoint?.lon !== 'number'
+          ) {
+            continue;
+          }
           routeFeatures.push({
             type: 'Feature',
             geometry: {
@@ -1636,15 +1690,59 @@ function App() {
       });
 
       routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
-      map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
-    })().catch((error) => {
-      console.error(error);
-    });
-  }, [places, visits, tripLogs, profileId, profileVisualsById, isMapReady, selectedMapPlaceId, showTripRoutes, themeMode]);
+    } catch (error) {
+      console.error('Failed to update map sources for the active profile.', error);
+      setUiError((current) => current ?? 'Some profile data could not be drawn on the map.');
+    }
+  }, [activeTrips, activeVisits, defaultVisuals, isMapReady, isMultiProfileView, pointLookup, profileId, profileVisualsById]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) return;
+    map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
+  }, [isMapReady, showTripRoutes]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) return;
+    try {
+      const selectedRegionSource = map.getSource('selected-region') as maplibregl.GeoJSONSource | undefined;
+      if (!selectedRegionSource || !stateGeoRef.current) return;
+
+      const stateLookup = new Map(stateGeoRef.current.features.map((feature) => [feature.id, feature] as const));
+      const selectedStateFeature =
+        selectedMapPlaceId && selectedMapPlaceId.startsWith('state-') ? stateLookup.get(selectedMapPlaceId) ?? null : null;
+      const selectedStateVisuals =
+        selectedStateFeature && isMultiProfileView
+          ? profileVisualsById.get(stateVisitById.get(selectedStateFeature.id)?.profile_id ?? -1) ?? defaultVisuals
+          : typeof profileId === 'number'
+            ? profileVisualsById.get(profileId) ?? defaultVisuals
+            : defaultVisuals;
+
+      selectedRegionSource.setData({
+        type: 'FeatureCollection',
+        features: selectedStateFeature
+          ? [
+              {
+                type: 'Feature',
+                id: selectedStateFeature.id,
+                geometry: selectedStateFeature.geometry,
+                properties: {
+                  ...selectedStateFeature.properties,
+                  selection_color: selectedStateVisuals.selectedRegion,
+                },
+              },
+            ]
+          : [],
+      } as any);
+    } catch (error) {
+      console.error('Failed to update selected region.', error);
+    }
+  }, [defaultVisuals, isMapReady, isMultiProfileView, profileId, profileVisualsById, selectedMapPlaceId, stateVisitById]);
 
   const activeFilteredPlaces = useMemo(() => {
-    const term = search[activeTab].toLowerCase();
-    let scopedPlaces = places[activeTab];
+    const term = deferredSearch[activeTab].trim().toLowerCase();
+    let scopedPlaces = sortedPlaces[activeTab];
 
     if (activeTab === 'state' || activeTab === 'city') {
       const selectedCodes = selectedVisitedCountries[activeTab];
@@ -1661,41 +1759,38 @@ function App() {
           : true,
       )
       .filter((place) => {
-        if (activeTab === 'state') {
-          const fallbackState = place.state_code || place.id.replace(/^state-[^-]+-/, '') || '';
-          return `${place.name || fallbackState} ${place.country_code || ''}`.toLowerCase().includes(term);
-        }
         if (activeTab === 'airport') {
           if (selectedAirportSearchId) {
             return place.id === selectedAirportSearchId;
           }
-          return `${place.name} ${place.airport_code ?? ''} ${place.search_location ?? ''}`
-            .toLowerCase()
-            .includes(term);
         }
-        return place.name.toLowerCase().includes(term);
+        return (placeSearchTextByType[activeTab].get(place.id) ?? '').includes(term);
       })
       .filter((place) => {
         const isVisited = visitedIds.has(place.id);
         if (listScope[activeTab] === 'visited') return isVisited;
         if (listScope[activeTab] === 'unvisited') return !isVisited;
+        if (activeTab === 'site' && listScope[activeTab] === 'visited_countries') {
+          return visitedCountryCodes.has((place.country_code || '').toUpperCase());
+        }
         return true;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      });
 
     return filtered;
   }, [
     activeTab,
+    deferredSearch,
     listScope,
-    places,
-    search,
+    placeSearchTextByType,
     selectedVisitedCountries,
     selectedAirportSearchId,
+    visitedCountryCodes,
     siteCategoryFilter,
+    sortedPlaces,
     visitedIds,
   ]);
 
-  const MAX_VISIBLE_LIST_ITEMS = 1200;
+  const MAX_VISIBLE_LIST_ITEMS = 500;
   const visiblePlaces = useMemo(
     () => activeFilteredPlaces.slice(0, MAX_VISIBLE_LIST_ITEMS),
     [activeFilteredPlaces],
@@ -2168,30 +2263,6 @@ function App() {
     return Math.round(value).toLocaleString();
   };
 
-  const hemisphereTotals = {
-    northSouth: (stats?.hemispheres.north ?? 0) + (stats?.hemispheres.south ?? 0),
-    eastWest: (stats?.hemispheres.east ?? 0) + (stats?.hemispheres.west ?? 0),
-    combined:
-      (stats?.hemispheres.north ?? 0) +
-      (stats?.hemispheres.south ?? 0) +
-      (stats?.hemispheres.east ?? 0) +
-      (stats?.hemispheres.west ?? 0),
-  };
-  const hemispherePercents = {
-    north:
-      hemisphereTotals.northSouth > 0 ? ((stats?.hemispheres.north ?? 0) / hemisphereTotals.northSouth) * 100 : 0,
-    south:
-      hemisphereTotals.northSouth > 0 ? ((stats?.hemispheres.south ?? 0) / hemisphereTotals.northSouth) * 100 : 0,
-    east: hemisphereTotals.eastWest > 0 ? ((stats?.hemispheres.east ?? 0) / hemisphereTotals.eastWest) * 100 : 0,
-    west: hemisphereTotals.eastWest > 0 ? ((stats?.hemispheres.west ?? 0) / hemisphereTotals.eastWest) * 100 : 0,
-    northCombined:
-      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.north ?? 0) / hemisphereTotals.combined) * 100 : 0,
-    eastCombined:
-      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.east ?? 0) / hemisphereTotals.combined) * 100 : 0,
-    southCombined:
-      hemisphereTotals.combined > 0 ? ((stats?.hemispheres.south ?? 0) / hemisphereTotals.combined) * 100 : 0,
-  };
-
   const handleLogout = async () => {
     try {
       await api('/api/auth/logout', { method: 'POST' });
@@ -2556,9 +2627,11 @@ function App() {
                     }))
                   }
                 >
-                  <option value="all">All</option>
-                  <option value="visited">Visited</option>
-                  <option value="unvisited">Unvisited</option>
+                  {getScopeOptions(tab.type).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             ))}
@@ -3235,7 +3308,7 @@ function App() {
               {activeTab === 'airport' ? (
                 <>
                   <datalist id="airport-search-options">
-                    {airportAutocomplete(search.airport).map((airport) => (
+                    {airportAutocompleteOptions.map((airport) => (
                       <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
                     ))}
                   </datalist>
@@ -3274,9 +3347,11 @@ function App() {
                       }))
                     }
                   >
-                    <option value="all">All</option>
-                    <option value="visited">Visited</option>
-                    <option value="unvisited">Unvisited</option>
+                    {getScopeOptions(activeTab).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -3304,9 +3379,11 @@ function App() {
                       }))
                     }
                   >
-                    <option value="all">All</option>
-                    <option value="visited">Visited</option>
-                    <option value="unvisited">Unvisited</option>
+                    {getScopeOptions(activeTab).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -3612,165 +3689,11 @@ function App() {
             <div className="detail-panel">
               <div className="panel-header">
                 <div>
-                  <h3>Stats</h3>
-                  <p>Measured travel records and dataset coverage from reported visits and trips.</p>
+                  <h3>Travel Stats</h3>
+                  <p>Derived travel metrics from your logged trips, visits, and place metadata.</p>
                 </div>
               </div>
-
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <span>Overall score</span>
-                  <strong>{Math.round(stats?.scorecard.overall_score ?? 0).toLocaleString()}</strong>
-                  <small>{Math.round(stats?.scorecard.achievement_score ?? 0).toLocaleString()} achievement points</small>
-                </div>
-                <div className="stat-card hemisphere-card">
-                  <span>Hemisphere Coverage</span>
-                  <div className="hemisphere-wheel-wrap">
-                    <span className="hemi-label hemi-n">N</span>
-                    <span className="hemi-label hemi-e">E</span>
-                    <span className="hemi-label hemi-s">S</span>
-                    <span className="hemi-label hemi-w">W</span>
-                    <div
-                      className="hemisphere-wheel"
-                      style={
-                        {
-                          '--north': `${hemispherePercents.northCombined}%`,
-                          '--east': `${hemispherePercents.eastCombined}%`,
-                          '--south': `${hemispherePercents.southCombined}%`,
-                          '--west': `${Math.max(
-                            0,
-                            100 -
-                              hemispherePercents.northCombined -
-                              hemispherePercents.eastCombined -
-                              hemispherePercents.southCombined,
-                          )}%`,
-                        } as CSSProperties
-                      }
-                    />
-                  </div>
-                  <small>
-                    N {stats?.hemispheres.north ?? 0} | S {stats?.hemispheres.south ?? 0} | E{' '}
-                    {stats?.hemispheres.east ?? 0} | W {stats?.hemispheres.west ?? 0}
-                  </small>
-                  <small>
-                    NE {stats?.hemispheres.quadrants.ne ?? 0} | NW {stats?.hemispheres.quadrants.nw ?? 0} | SE{' '}
-                    {stats?.hemispheres.quadrants.se ?? 0} | SW {stats?.hemispheres.quadrants.sw ?? 0}
-                  </small>
-                  <small>
-                    N/S overlap {stats?.hemispheres.overlap.north_south ? 'Yes' : 'No'} | E/W overlap{' '}
-                    {stats?.hemispheres.overlap.east_west ? 'Yes' : 'No'} | 4 quadrants{' '}
-                    {stats?.hemispheres.overlap.all_four_quadrants ? 'Yes' : 'No'}
-                  </small>
-                </div>
-                <div className="stat-card">
-                  <span>Estimated Miles Flown</span>
-                  <strong>{Math.round(stats?.trip_logs.estimated_miles ?? 0).toLocaleString()}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Trips Logged</span>
-                  <strong>{stats?.trip_logs.count ?? 0}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Flight Legs</span>
-                  <strong>{stats?.trip_logs.flight_legs ?? 0}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Avg Miles / Trip</span>
-                  <strong>{Math.round(stats?.trip_logs.average_miles_per_trip ?? 0).toLocaleString()}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Countries Visited</span>
-                  <strong>
-                    {stats?.countries.visited ?? 0} / {stats?.countries.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>Continents Visited</span>
-                  <strong>
-                    {stats?.continents.visited ?? 0} / {stats?.continents.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>States / Regions</span>
-                  <strong>
-                    {stats?.states.visited ?? 0} / {stats?.states.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>Cities Visited</span>
-                  <strong>
-                    {stats?.cities.visited ?? 0} / {stats?.cities.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>Airports Visited</span>
-                  <strong>
-                    {stats?.airports.visited ?? 0} / {stats?.airports.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>Sites Visited</span>
-                  <strong>
-                    {stats?.sites.visited ?? 0} / {stats?.sites.total ?? 0}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span>Distance (km)</span>
-                  <strong>{Math.round(stats?.travel.distance_km ?? 0).toLocaleString()}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Timezones Visited</span>
-                  <strong>{stats?.travel.timezones_visited ?? 0}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Currencies Used</span>
-                  <strong>{stats?.travel.currencies_used ?? 0}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Longest Travel Streak</span>
-                  <strong>{stats?.travel.longest_trip_streak_days ?? 0} days</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Repeated Airports</span>
-                  <strong>{stats?.travel.repeated_airports ?? 0}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Farthest North</span>
-                  <strong>{stats?.geo_extremes.farthest_north?.name ?? 'N/A'}</strong>
-                  <small>{stats?.geo_extremes.farthest_north?.lat ?? 'N/A'}°</small>
-                </div>
-                <div className="stat-card">
-                  <span>Farthest South</span>
-                  <strong>{stats?.geo_extremes.farthest_south?.name ?? 'N/A'}</strong>
-                  <small>{stats?.geo_extremes.farthest_south?.lat ?? 'N/A'}°</small>
-                </div>
-                <div className="stat-card">
-                  <span>Highest Elevation</span>
-                  <strong>{stats?.geo_extremes.highest_elevation?.name ?? 'N/A'}</strong>
-                  <small>{Math.round(stats?.geo_extremes.highest_elevation?.elevation_m ?? 0)} m</small>
-                </div>
-                <div className="stat-card">
-                  <span>Lowest Elevation</span>
-                  <strong>{stats?.geo_extremes.lowest_elevation?.name ?? 'N/A'}</strong>
-                  <small>{Math.round(stats?.geo_extremes.lowest_elevation?.elevation_m ?? 0)} m</small>
-                </div>
-                {stats?.measurements.map((measurement) => (
-                  <div className="stat-card" key={measurement.id}>
-                    <span>{measurement.label}</span>
-                    <strong>{measurement.place_name}</strong>
-                    <small>{measurement.display_value}</small>
-                    {measurement.detail && <small>{measurement.detail}</small>}
-                  </div>
-                ))}
-                {Object.entries(stats?.site_categories ?? {}).map(([category, values]) => (
-                  <div className="stat-card" key={category}>
-                    <span>{category.replaceAll('_', ' ')}</span>
-                    <strong>
-                      {values.visited} / {values.total}
-                    </strong>
-                  </div>
-                ))}
-              </div>
+              <TravelStatsPanel model={travelStatsModel} />
             </div>
           )}
 

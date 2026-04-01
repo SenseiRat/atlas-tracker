@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import base64
 import hashlib
+import html
 import hmac
 import math
 import os
@@ -11,6 +12,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
@@ -50,6 +52,7 @@ OIDC_COOKIE_SECURE = os.environ.get("OIDC_COOKIE_SECURE", "0").strip().lower() i
 LOCAL_USER_COOKIE = os.environ.get("LOCAL_USER_COOKIE", "world_tracker_local_user").strip() or "world_tracker_local_user"
 PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "260000"))
 DATA_SYNC_INTERVAL_SECONDS = max(int(os.environ.get("DATA_SYNC_INTERVAL_SECONDS", "3600")), 0)
+DATA_SYNC_SCHEMA_VERSION = 2
 SourceCollector = Callable[[Any, Dict[str, Any]], Tuple[List[tuple], Dict[str, Tuple[str, str]]]]
 
 SOURCE_DATASET_DEFINITIONS = {
@@ -57,7 +60,12 @@ SOURCE_DATASET_DEFINITIONS = {
     "state_regions": {"filename": "state_regions.geojson", "required": False, "auto_sync": True},
     "cities": {"filename": "cities.json", "required": True, "auto_sync": True},
     "airports": {"filename": "airports.json", "required": True, "auto_sync": True},
-    "sites": {"filename": "sites.json", "required": True, "auto_sync": False},
+    "sites": {
+        "filenames": ["sites.json", "whc001.json", "darksky.json"],
+        "required": True,
+        "auto_sync": True,
+        "empty_payload": [],
+    },
 }
 
 app = FastAPI(title="World Visited Tracker")
@@ -672,6 +680,13 @@ def extract_country_economy(item: Dict[str, Any]) -> Optional[str]:
     economy = str(properties.get("ECONOMY") or properties.get("economy") or "").strip()
     return economy or None
 
+
+def extract_continent_name(item: Dict[str, Any]) -> Optional[str]:
+    properties = nested_place_properties(item)
+    continent = str(properties.get("CONTINENT") or properties.get("continent") or item.get("continent") or "").strip()
+    return continent or None
+
+
 def metric_entry(
     metric_id: str,
     label: str,
@@ -717,12 +732,157 @@ def _path_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+HTML_TAG_RE = re.compile(r"<[^>]+>")
+DARKSKY_CATEGORY_RE = re.compile(
+    r"Category\s+(.+?)(?=\s*Address|\s*Google Maps|\s*Contact|\s*Documents|\s*Website|\s*Weather|\s*Certified\b|\s*Land area|\s*Area\b|$)",
+    re.IGNORECASE,
+)
+DARKSKY_ADDRESS_RE = re.compile(
+    r"Address\s+(.+?)(?=Google Maps|\s*Contact|\s*Documents|\s*Website|\s*Weather|\s*Certified\b|$)",
+    re.IGNORECASE,
+)
+DARKSKY_WEATHER_COORDS_RE = re.compile(
+    r"Weather\b.*?\((-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\)",
+    re.IGNORECASE,
+)
+DARKSKY_ANY_COORDS_RE = re.compile(r"\((-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\)")
+
+
+def sanitize_markup_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value)
+    if not text:
+        return None
+    text = re.sub(r"(?i)<br\s*/?>", " ", text)
+    text = HTML_TAG_RE.sub("", text)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def normalize_lookup_text(value: Any) -> str:
+    text = sanitize_markup_text(value) or ""
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = normalized.replace("&", " and ")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized.lower()).strip()
+    return normalized
+
+
+def register_country_name_variants(mapping: Dict[str, str], country_code: str, *names: Any) -> None:
+    for raw_name in names:
+        normalized = normalize_lookup_text(raw_name)
+        if normalized:
+            mapping[normalized] = country_code
+
+
+def infer_country_code_from_text(value: Any, country_name_to_iso3: Dict[str, str]) -> Optional[str]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return None
+    candidates = [text]
+    segments = [segment.strip() for segment in re.split(r"[,;/|()]", text) if segment.strip()]
+    candidates.extend(reversed(segments))
+    for candidate in candidates:
+        normalized = normalize_lookup_text(candidate)
+        if not normalized:
+            continue
+        if normalized in country_name_to_iso3:
+            return country_name_to_iso3[normalized]
+        words = normalized.split()
+        for width in range(min(len(words), 5), 0, -1):
+            suffix = " ".join(words[-width:])
+            if suffix in country_name_to_iso3:
+                return country_name_to_iso3[suffix]
+    return None
+
+
+def extract_darksky_coordinates(value: Any) -> Tuple[Optional[float], Optional[float]]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return None, None
+    match = DARKSKY_WEATHER_COORDS_RE.search(text)
+    if match is None:
+        all_matches = DARKSKY_ANY_COORDS_RE.findall(text)
+        match = all_matches[-1] if all_matches else None
+        if match is None:
+            return None, None
+        lat = as_float(match[0])
+        lon = as_float(match[1])
+        return lat, lon
+    lat = as_float(match.group(1))
+    lon = as_float(match.group(2))
+    return lat, lon
+
+
+def extract_darksky_category_label(value: Any) -> Optional[str]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return None
+    match = DARKSKY_CATEGORY_RE.search(text)
+    if match:
+        return sanitize_markup_text(match.group(1))
+    normalized = normalize_lookup_text(text)
+    if "urban night sky place" in normalized:
+        return "Urban Night Sky Place"
+    if "darksky approved lodging" in normalized or "darksky lodging standards" in normalized or "lodging program" in normalized:
+        return "Dark Sky Lodging"
+    if "dark sky sanctuary" in normalized:
+        return "Dark Sky Sanctuary"
+    if "dark sky reserve" in normalized:
+        return "Dark Sky Reserve"
+    if "dark sky community" in normalized:
+        return "Dark Sky Community"
+    if "dark sky park" in normalized:
+        return "Dark Sky Park"
+    return None
+
+
+def extract_darksky_address(value: Any) -> Optional[str]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return None
+    match = DARKSKY_ADDRESS_RE.search(text)
+    return sanitize_markup_text(match.group(1)) if match else None
+
+
+def normalize_darksky_category(category_label: Optional[str]) -> str:
+    label = normalize_lookup_text(category_label)
+    if "lodging" in label:
+        return "dark_sky_lodging"
+    if "urban night sky place" in label:
+        return "urban_night_sky_place"
+    if "sanctuary" in label:
+        return "dark_sky_sanctuary"
+    if "reserve" in label:
+        return "dark_sky_reserve"
+    if "community" in label:
+        return "dark_sky_community"
+    if "park" in label:
+        return "dark_sky_park"
+    if "place" in label:
+        return "dark_sky_place"
+    return "dark_sky_site"
+
+
+def _source_paths(config: Dict[str, Any]) -> List[Path]:
+    filenames = config.get("filenames")
+    if isinstance(filenames, list):
+        return [DATA_SOURCES_DIR / str(filename) for filename in filenames]
+    return [DATA_SOURCES_DIR / str(config["filename"])]
+
+
 def _compute_source_digests() -> Dict[str, str]:
     digests: Dict[str, str] = {}
     for source_key, config in SOURCE_DATASET_DEFINITIONS.items():
-        path = DATA_SOURCES_DIR / str(config["filename"])
-        if path.exists():
-            digests[source_key] = _path_digest(path)
+        path_digests = [
+            f"{path.name}:{_path_digest(path)}"
+            for path in _source_paths(config)
+            if path.exists()
+        ]
+        if path_digests:
+            digests[source_key] = hashlib.sha256("|".join(path_digests).encode("utf-8")).hexdigest()
     return digests
 
 
@@ -731,13 +891,29 @@ def _load_source_payloads(source_keys: Optional[Set[str]] = None) -> Dict[str, A
     for source_key, config in SOURCE_DATASET_DEFINITIONS.items():
         if source_keys is not None and source_key not in source_keys:
             continue
-        path = DATA_SOURCES_DIR / str(config["filename"])
+        paths = _source_paths(config)
+        if len(paths) > 1:
+            source_payloads = [
+                {"filename": path.name, "payload": load_json(path)}
+                for path in paths
+                if path.exists()
+            ]
+            if source_payloads:
+                payloads[source_key] = source_payloads
+                continue
+            if bool(config.get("required")):
+                filenames = ", ".join(path.name for path in paths)
+                raise FileNotFoundError(f"Required data source missing: one of [{filenames}]")
+            payloads[source_key] = config.get("empty_payload", [])
+            continue
+
+        path = paths[0]
         if path.exists():
             payloads[source_key] = load_json(path)
             continue
         if bool(config.get("required")):
             raise FileNotFoundError(f"Required data source missing: {path}")
-        payloads[source_key] = {"features": []}
+        payloads[source_key] = config.get("empty_payload", {"features": []})
     return payloads
 
 
@@ -745,6 +921,7 @@ def _collect_country_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[t
     rows: List[tuple] = []
     source_state: Dict[str, Tuple[str, str]] = {}
     iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+    country_name_to_iso3: Dict[str, str] = context.setdefault("country_name_to_iso3", {})
 
     for feature in payload.get("features", []):
         props = feature.get("properties", {})
@@ -752,6 +929,21 @@ def _collect_country_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[t
         iso2 = str(props.get("ISO_A2") or "").upper()
         if iso2 and country_code:
             iso2_to_iso3[iso2] = country_code
+        if country_code:
+            register_country_name_variants(
+                country_name_to_iso3,
+                country_code,
+                props.get("NAME"),
+                props.get("NAME_LONG"),
+                props.get("ADMIN"),
+                props.get("FORMAL_EN"),
+                props.get("BRK_NAME"),
+                props.get("NAME_EN"),
+            )
+            if country_code == "USA":
+                register_country_name_variants(country_name_to_iso3, country_code, "US", "USA", "United States", "United States of America")
+            elif country_code == "GBR":
+                register_country_name_variants(country_name_to_iso3, country_code, "UK", "United Kingdom", "Great Britain", "England", "Scotland", "Wales", "Northern Ireland")
         place_id = f"country-{country_code}"
         data = {"geometry": feature.get("geometry"), "properties": props}
         rows.append(
@@ -900,36 +1092,112 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
     rows: List[tuple] = []
     source_state: Dict[str, Tuple[str, str]] = {}
     iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
+    country_name_to_iso3: Dict[str, str] = context.setdefault("country_name_to_iso3", {})
+    payload_groups = payload
+    if not payload_groups or not isinstance(payload_groups, list) or "payload" not in payload_groups[0]:
+        payload_groups = [{"filename": "sites.json", "payload": payload}]
 
-    for site in payload:
-        name = site.get("name") or "Unknown site"
-        country_code = normalize_country_code(site.get("country_code") or site.get("iso_country"), iso2_to_iso3)
-        state_code = extract_state_code(site)
-        lat = as_float(site.get("lat", site.get("latitude", site.get("latitude_deg"))))
-        lon = as_float(site.get("lon", site.get("longitude", site.get("longitude_deg"))))
-        site_id = site.get("id")
-        if site_id is None:
-            site_id = f"{slugify(name)}-{country_code or 'xx'}-{lat or 'na'}-{lon or 'na'}"
-        place_id = str(site_id)
-        if not place_id.startswith("site-"):
-            place_id = f"site-{place_id}"
-        site_payload = dict(site)
-        if state_code:
-            site_payload["state_code"] = state_code
-        if country_code:
-            site_payload["country_code"] = country_code
-        rows.append(
-            (
-                place_id,
-                "site",
-                name,
-                country_code,
-                lat,
-                lon,
-                json.dumps(site_payload),
+    for payload_group in payload_groups:
+        filename = str(payload_group.get("filename") or "")
+        source_payload = payload_group.get("payload") or []
+        for site in source_payload:
+            if filename == "whc001.json":
+                name = sanitize_markup_text(site.get("name_en") or site.get("name")) or "Unknown site"
+                coordinates = site.get("coordinates") or {}
+                raw_iso_codes = str(site.get("iso_codes") or "").strip()
+                country_codes = [code.strip().upper() for code in raw_iso_codes.split(",") if code.strip()]
+                country_code = normalize_country_code(country_codes[0] if country_codes else None, iso2_to_iso3)
+                lat = as_float(coordinates.get("lat"))
+                lon = as_float(coordinates.get("lon"))
+                site_id = site.get("id") or site.get("id_no") or site.get("uuid")
+                if site_id is None:
+                    site_id = f"unesco-{slugify(name)}-{country_code or 'xx'}-{lat or 'na'}-{lon or 'na'}"
+                site_payload = {
+                    "id": site_id,
+                    "name": name,
+                    "country_code": country_code,
+                    "country_codes": country_codes,
+                    "lat": lat,
+                    "lon": lon,
+                    "category": "heritage_unesco",
+                    "source": "unesco_world_heritage",
+                    "source_dataset": filename,
+                    "unesco_id": str(site.get("id_no") or "").strip() or None,
+                    "unesco_uuid": str(site.get("uuid") or "").strip() or None,
+                    "states_names": [item for item in (sanitize_markup_text(name) for name in (site.get("states_names") or [])) if item],
+                    "region": sanitize_markup_text(site.get("region")),
+                    "category_label": sanitize_markup_text(site.get("category")),
+                    "criteria": sanitize_markup_text(site.get("criteria_txt")),
+                    "date_inscribed": site.get("date_inscribed"),
+                    "danger": str(site.get("danger") or "").strip().lower() == "true",
+                    "transboundary": str(site.get("transboundary") or "").strip().lower() == "true",
+                    "short_description": sanitize_markup_text(site.get("short_description_en")),
+                    "main_image_url": site.get("main_image_url"),
+                }
+                state_code = None
+            elif filename == "darksky.json":
+                name = sanitize_markup_text(site.get("title")) or "Unknown site"
+                excerpt = sanitize_markup_text(site.get("excerpt"))
+                content = sanitize_markup_text(site.get("content"))
+                category_label = extract_darksky_category_label(content)
+                address = extract_darksky_address(content)
+                lat, lon = extract_darksky_coordinates(content)
+                country_code = (
+                    infer_country_code_from_text(name, country_name_to_iso3)
+                    or infer_country_code_from_text(address, country_name_to_iso3)
+                )
+                raw_slug = str(site.get("slug") or "").strip()
+                site_id = f"darksky-{raw_slug or slugify(name)}"
+                site_payload = {
+                    "id": site_id,
+                    "name": name,
+                    "country_code": country_code,
+                    "lat": lat,
+                    "lon": lon,
+                    "category": normalize_darksky_category(category_label),
+                    "category_label": category_label,
+                    "source": "darksky_international",
+                    "source_dataset": filename,
+                    "slug": str(site.get("slug") or "").strip() or None,
+                    "link": str(site.get("link") or "").strip() or None,
+                    "designation_date": str(site.get("date") or "").strip() or None,
+                    "address": address,
+                    "short_description": excerpt,
+                    "description": content,
+                    "designation_type": category_label,
+                }
+                state_code = None
+            else:
+                name = site.get("name") or "Unknown site"
+                country_code = normalize_country_code(site.get("country_code") or site.get("iso_country"), iso2_to_iso3)
+                state_code = extract_state_code(site)
+                lat = as_float(site.get("lat", site.get("latitude", site.get("latitude_deg"))))
+                lon = as_float(site.get("lon", site.get("longitude", site.get("longitude_deg"))))
+                site_id = site.get("id")
+                if site_id is None:
+                    site_id = f"{slugify(name)}-{country_code or 'xx'}-{lat or 'na'}-{lon or 'na'}"
+                site_payload = dict(site)
+                site_payload.setdefault("source_dataset", filename or "sites.json")
+
+            place_id = str(site_id)
+            if not place_id.startswith("site-"):
+                place_id = f"site-{place_id}"
+            if state_code:
+                site_payload["state_code"] = state_code
+            if country_code:
+                site_payload["country_code"] = country_code
+            rows.append(
+                (
+                    place_id,
+                    "site",
+                    name,
+                    country_code,
+                    lat,
+                    lon,
+                    json.dumps(site_payload),
+                )
             )
-        )
-        source_state[place_id] = ("sites", hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest())
+            source_state[place_id] = ("sites", hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest())
     return rows, source_state
 
 
@@ -1063,6 +1331,7 @@ def seed_db() -> None:
             conn,
             {
                 "data_sync.source_digests": json.dumps(result["source_digests"], sort_keys=True),
+                "data_sync.schema_version": json.dumps(DATA_SYNC_SCHEMA_VERSION),
                 "data_sync.last_synced_at": result["synced_at"],
                 "data_sync.last_sync_reason": "seed_db",
             },
@@ -1088,7 +1357,8 @@ def sync_data_sources_if_needed(*, force: bool = False, reason: str = "manual") 
     tracked_digests = {source_key: digests[source_key] for source_key in auto_sync_keys if source_key in digests}
     with get_db() as conn:
         previous_digests = _app_setting_json(conn, "data_sync.source_digests") or {}
-        if not force and tracked_digests == previous_digests:
+        previous_schema_version = int(_app_setting_json(conn, "data_sync.schema_version") or 0)
+        if not force and tracked_digests == previous_digests and previous_schema_version == DATA_SYNC_SCHEMA_VERSION:
             return {
                 "changed": False,
                 "reason": reason,
@@ -1098,6 +1368,7 @@ def sync_data_sources_if_needed(*, force: bool = False, reason: str = "manual") 
         result = sync_places_from_data_sources(conn, auto_sync_keys if not force else None)
         settings = {
             "data_sync.source_digests": json.dumps(tracked_digests, sort_keys=True),
+            "data_sync.schema_version": json.dumps(DATA_SYNC_SCHEMA_VERSION),
             "data_sync.last_synced_at": result["synced_at"],
             "data_sync.last_sync_reason": reason,
         }
@@ -1874,6 +2145,46 @@ def _get_redirect_uri(request: Request) -> str:
     if OIDC_REDIRECT_PATH.startswith("http://") or OIDC_REDIRECT_PATH.startswith("https://"):
         return OIDC_REDIRECT_PATH
     return f"{_get_request_base_url(request)}{OIDC_REDIRECT_PATH}"
+
+
+def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]:
+    item = dict(row)
+    try:
+        data = json.loads(item.get("data") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    if place_type == "airport" and is_duplicate_airport_record(data):
+        return None
+
+    state_code = extract_state_code(data)
+    municipality = str(data.get("municipality") or data.get("city") or "").strip() or None
+    country_text = str(item.get("country_code") or "").strip()
+    location_parts = [part for part in [municipality, state_code, country_text] if part]
+    country_codes = data.get("country_codes")
+
+    item["state_code"] = state_code
+    item["category"] = str(data.get("category") or "").strip() or None
+    item["airport_code"] = extract_airport_code(data)
+    item["airport_type"] = str(data.get("type") or "").strip().lower() or None
+    item["municipality"] = municipality
+    item["location"] = ", ".join(location_parts)
+    item["search_location"] = " ".join(location_parts).lower()
+    item["timezone"] = extract_timezone(data)
+    item["elevation_m"] = extract_elevation_meters(data)
+    item["feature_code"] = str(data.get("feature_code") or "").strip() or None
+    item["feature_class"] = str(data.get("feature_class") or "").strip() or None
+    item["population"] = extract_population(data)
+    item["area_sqkm"] = extract_area_sqkm(data)
+    item["continent"] = extract_continent_name(data) if place_type == "country" else None
+    item["country_codes"] = [str(code).strip().upper() for code in country_codes if str(code).strip()] if isinstance(country_codes, list) else None
+    item["source"] = str(data.get("source") or data.get("source_dataset") or "").strip() or None
+
+    if place_type == "state" and not str(item.get("name") or "").strip():
+        fallback_code = state_code or str(item.get("id") or "").split("-")[-1].upper()
+        item["name"] = fallback_code or "Unknown"
+
+    item.pop("data", None)
+    return item
 
 
 def _get_local_users(conn: DBConnection) -> List[Dict[str, Any]]:
@@ -2667,30 +2978,15 @@ async def get_places(
                     break
                 scan_offset += len(rows)
                 for row in rows:
-                    item = dict(row)
-                    try:
-                        data = json.loads(item.get("data") or "{}")
-                    except json.JSONDecodeError:
-                        data = {}
-                    if is_duplicate_airport_record(data):
+                    item = _serialize_place_item(row, type)
+                    if not item:
                         continue
-                    state_code = extract_state_code(data)
-                    item["state_code"] = state_code
-                    item["category"] = str(data.get("category") or "").strip() or None
-                    item["airport_code"] = extract_airport_code(data)
-                    municipality = str(data.get("municipality") or data.get("city") or "").strip()
-                    item["municipality"] = municipality or None
-                    country_text = str(item.get("country_code") or "").strip()
-                    location_parts = [part for part in [municipality, state_code, country_text] if part]
-                    item["location"] = ", ".join(location_parts)
-                    item["search_location"] = " ".join(location_parts).lower()
-                    airport_type = str(data.get("type") or "").strip().lower()
+                    airport_type = str(item.get("airport_type") or "").strip().lower()
                     airport_name = str(item.get("name") or "").lower()
                     allowed_type = airport_type in {"regional_airport", "medium_airport", "large_airport"}
                     allowed_name = "regional" in airport_name
                     if not item.get("airport_code") or not (allowed_type or allowed_name):
                         continue
-                    item.pop("data", None)
                     items.append(item)
                     if len(items) >= limit:
                         break
@@ -2708,27 +3004,9 @@ async def get_places(
             rows = rows[:limit]
             next_offset = offset + len(rows)
             for row in rows:
-                item = dict(row)
-                try:
-                    data = json.loads(item.get("data") or "{}")
-                except json.JSONDecodeError:
-                    data = {}
-                if type == "airport" and is_duplicate_airport_record(data):
+                item = _serialize_place_item(row, type)
+                if not item:
                     continue
-                state_code = extract_state_code(data)
-                item["state_code"] = state_code
-                item["category"] = str(data.get("category") or "").strip() or None
-                item["airport_code"] = extract_airport_code(data)
-                municipality = str(data.get("municipality") or data.get("city") or "").strip()
-                item["municipality"] = municipality or None
-                country_text = str(item.get("country_code") or "").strip()
-                location_parts = [part for part in [municipality, state_code, country_text] if part]
-                item["location"] = ", ".join(location_parts)
-                item["search_location"] = " ".join(location_parts).lower()
-                if type == "state" and not str(item.get("name") or "").strip():
-                    fallback_code = state_code or str(item.get("id") or "").split("-")[-1].upper()
-                    item["name"] = fallback_code or "Unknown"
-                item.pop("data", None)
                 items.append(item)
         if include_total:
             total = conn.execute(

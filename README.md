@@ -98,7 +98,7 @@ pip install -r server/requirements.txt
 
 ## Data sources
 
-The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately. On first run, the server imports these files into the database. After that, it treats `data_sources/` as read-only input and polls for file changes on a configurable interval, applying differential upserts/deletes to the database automatically.
+The repo ships with a **small curated starter dataset** in `data_sources/` so the app runs immediately. On first run, the server imports these files into the database. After that, it polls `data_sources/` on a configurable interval and applies differential upserts/deletes automatically.
 
 - `countries.geojson`: simplified placeholder polygons.
 - `cities.json`: curated major cities.
@@ -195,7 +195,7 @@ The default poll interval is hourly (`DATA_SYNC_INTERVAL_SECONDS=3600`). Set it 
 
 ## Seeding
 
-The database imports from `data_sources/` automatically on first start and then keeps syncing those files. The application only reads those files; it does not rewrite them. You can still force a one-off sync with:
+The database imports from `data_sources/` automatically on first start and then keeps syncing those files. You can still force a one-off sync with:
 
 ```bash
 python scripts/seed_db.py
@@ -204,12 +204,12 @@ python scripts/seed_db.py
 ## Data Refresh Automation
 
 - In-app polling:
-  - Watches the repo-backed files in `data_sources/` in read-only mode.
+  - Watches the repo-backed files in `data_sources/`.
   - Upserts changed/new places and removes retired places only when they are not referenced by visits or trip logs.
-  - Automatically updates `countries`, `state_regions`, `cities`, and `airports`.
-  - Leaves `sites` in seed/manual-sync mode for now.
   - Controlled by:
     - `DATA_SYNC_INTERVAL_SECONDS` (default `3600`)
+    - `DATA_SYNC_EXTERNAL_REFRESH_ENABLED` (default `0`)
+    - `DATA_SYNC_EXTERNAL_REFRESH_INTERVAL_SECONDS` (default `86400`)
 - `python3 scripts/refresh_external_sources.py`
   - Refreshes:
     - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).
@@ -227,20 +227,14 @@ After refresh, the running app will detect the changed files on the next poll an
 python3 scripts/seed_db.py
 ```
 
-# Planned Features
-- TODO: Implement profile visibility settings (private/shared).
-- TODO: Build a Settings page for categories, OIDC config, list scope settings, and account/profile management.
-- TODO: Change list scope controls to: All / Visited / Unvisited, plus multiselect for user-defined super-lists.
-- TODO: Remove the "Visited only" checkbox after scope controls are replaced.
+If you want the server to run the refresh scripts itself, enable `DATA_SYNC_EXTERNAL_REFRESH_ENABLED=1`. It will run those scripts on the configured external refresh interval before syncing the local files back into the database.
+
+
+## List Work
 - TODO: Tighten city inclusion criteria (current list is too broad) and add a lookup + manual add flow for cities not in the curated list.
-- TODO: Fully populate and build state/region outlines and lists (improve sub-country region mapping).
 - TODO: Add Dark Sky destinations (International Dark Sky Places list).
 - TODO: Add famous cultural festivals.
 - TODO: Add national/iconic foods or regional food collections.
-- TODO: Split stats from achievements and build an achievements page for gamification.
 - TODO: Expand nature achievements (highest mountain, etc.).
 - TODO: Expand Michelin-star coverage to include comparable regional review/ranking sources where Michelin is limited.
 - TODO: Migrate/expand protected areas, national parks, and reserves data to WDPA-backed coverage.
-- TODO: Fix light/dark color schemes.
-- TODO: Improve theme colors based on the selected profile color.
-- TODO: Add a map toggle to show labels in English or native language.
