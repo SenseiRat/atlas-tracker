@@ -103,7 +103,10 @@ The repo ships with a **small curated starter dataset** in `data_sources/` so th
 - `countries.geojson`: simplified placeholder polygons.
 - `cities.json`: curated major cities.
 - `airports.json`: curated major airports.
-- `sites.json`: curated UNESCO-style landmarks.
+- `whc001.json`: UNESCO World Heritage site seed data.
+- `darksky.json`: DarkSky place seed data.
+- `festivals.json`: cultural festival seed data.
+- `michelin_restaurants.json`: Michelin restaurant seed data.
 
 ### Replacing with full datasets
 
@@ -143,7 +146,11 @@ data_sources/airports.json
 
 4) **Sites**
 
-- Keep `data_sources/sites.json` as curated starter data, or replace with your own list.
+- Use the split starter datasets in `data_sources/`:
+  - `whc001.json`
+  - `darksky.json`
+  - `festivals.json`
+  - `michelin_restaurants.json`
 
 5) **Replace files and let the app sync them**
 
@@ -214,12 +221,10 @@ python scripts/seed_db.py
   - Refreshes:
     - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).
     - `data_sources/cities.json` from GeoNames `cities15000` (population >= 10k).
-    - `data_sources/sites.json` by combining:
-      - UNESCO sites (Wikidata),
-      - protected areas/national parks (Wikidata),
-      - Michelin-starred restaurants (Wikidata),
-      - brewery/winery/distillery/vineyard places (OpenStreetMap Overpass + wikidata-tagged POIs),
-      - curated wonders + Worlds 50 Best items.
+    - Site datasets are read from the split files:
+      - `data_sources/whc001.json`
+      - `data_sources/darksky.json`
+      - `data_sources/festivals.json`
 
 After refresh, the running app will detect the changed files on the next poll and sync them automatically. For an immediate sync:
 

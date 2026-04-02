@@ -1,4 +1,5 @@
 type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
+type MeasurementSystem = 'metric' | 'imperial';
 
 export type TravelStatSection =
   | 'trips'
@@ -201,17 +202,25 @@ type DerivedContext = {
   tripYears: Map<number, number>;
   tripSeasons: Map<string, number>;
   travelDaysByYear: Map<number, number>;
+  explicitVisitedCountryCodes: Set<string>;
   allCountryCodes: Set<string>;
   destinationCityLabels: Set<string>;
   destinationCounts: Map<string, number>;
   destinationFirstSeenByPlaceId: Map<string, string>;
   countryCounts: Map<string, PlaceCounter>;
   cityCounts: Map<string, PlaceCounter>;
+  homeCountryCode: string | null;
   homeAirport: TravelPlace | null;
   homeAirportTripCount: number;
   farthestDestinationFromHome: { place: TravelPlace; miles: number } | null;
   closestDestinationToHome: { place: TravelPlace; miles: number } | null;
   farthestTripFromHome: { trip: DatedTrip; miles: number; place: TravelPlace } | null;
+  longestTrip: {
+    trip: DatedTrip;
+    miles: number;
+    originName: string;
+    destinationName: string;
+  } | null;
   longSingleLeg: { segmentLabel: string; miles: number } | null;
   maxCountriesInTrip: { count: number; detail: string } | null;
   borderCrossingsByAir: number;
@@ -253,6 +262,7 @@ export type TravelDataContext = DerivedContext;
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH = new Date().getMonth() + 1;
 const KG_CO2E_PER_MILE = 0.24;
+let activeMeasurementSystem: MeasurementSystem = 'imperial';
 
 const SECTION_LABELS: Record<TravelStatSection, string> = {
   trips: 'Trips',
@@ -292,7 +302,17 @@ function formatCount(value: number) {
 }
 
 function formatMiles(value: number) {
+  if (activeMeasurementSystem === 'metric') {
+    return `${Math.round(value * 1.60934).toLocaleString()} km`;
+  }
   return `${Math.round(value).toLocaleString()} mi`;
+}
+
+function formatElevation(valueMeters: number) {
+  if (activeMeasurementSystem === 'metric') {
+    return `${Math.round(valueMeters).toLocaleString()} m`;
+  }
+  return `${Math.round(valueMeters * 3.28084).toLocaleString()} ft`;
 }
 
 function formatDays(value: number) {
@@ -412,7 +432,12 @@ function getTimeZoneOffsetMinutes(timeZone: string, date: Date) {
   }
 }
 
-function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLogs: TravelTripLog[]): DerivedContext {
+function buildContext(
+  places: TravelPlacesByType,
+  visits: TravelVisit[],
+  tripLogs: TravelTripLog[],
+  homeCountryCode?: string,
+): DerivedContext {
   const placesById = new Map<string, TravelPlace>();
   (Object.values(places) as TravelPlace[][]).forEach((items) => {
     items.forEach((place) => placesById.set(place.id, place));
@@ -486,10 +511,12 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
     if (!existing || parsed.key < existing) destinationFirstSeenByPlaceId.set(visit.place_id, parsed.key);
   });
 
+  const explicitVisitedCountryCodes = new Set<string>();
   const allCountryCodes = new Set<string>();
   const destinationCityLabels = new Set<string>();
   const countryCounts = new Map<string, PlaceCounter>();
   const cityCounts = new Map<string, PlaceCounter>();
+  const normalizedHomeCountryCode = normalizeCode(homeCountryCode) || null;
 
   const incrementPlaceCounter = (map: Map<string, PlaceCounter>, key: string, label: string) => {
     const current = map.get(key);
@@ -500,23 +527,12 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
     map.set(key, { label, count: 1 });
   };
 
-  destinationPlaces.forEach((place) => {
-    const countryCode = normalizeCode(place.country_code);
-    if (countryCode) {
-      allCountryCodes.add(countryCode);
-      incrementPlaceCounter(countryCounts, countryCode, countryNameByCode.get(countryCode) ?? place.country_code ?? place.name);
-    }
-    (place.country_codes ?? []).forEach((code) => allCountryCodes.add(normalizeCode(code)));
-    const cityLabel =
-      placeTypeFromId(place.id) === 'city'
-        ? place.name
-        : placeTypeFromId(place.id) === 'airport'
-          ? place.municipality || place.name
-          : '';
-    if (cityLabel) {
-      destinationCityLabels.add(cityLabel);
-      incrementPlaceCounter(cityCounts, `${countryCode}:${normalizeName(cityLabel)}`, cityLabel);
-    }
+  visitedPlaces.forEach((place) => {
+    if (placeTypeFromId(place.id) !== 'country') return;
+    const countryCode = normalizeCode(place.country_code || place.id.replace(/^country-/, ''));
+    if (!countryCode) return;
+    explicitVisitedCountryCodes.add(countryCode);
+    allCountryCodes.add(countryCode);
   });
 
   datedTrips.forEach((trip) => {
@@ -525,11 +541,13 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
     const countryCode = normalizeCode(destinationPlace.country_code);
     if (countryCode) {
       allCountryCodes.add(countryCode);
-      incrementPlaceCounter(
-        countryCounts,
-        countryCode,
-        countryNameByCode.get(countryCode) ?? destinationPlace.country_code ?? destinationPlace.name,
-      );
+      if (countryCode !== normalizedHomeCountryCode) {
+        incrementPlaceCounter(
+          countryCounts,
+          countryCode,
+          countryNameByCode.get(countryCode) ?? destinationPlace.country_code ?? destinationPlace.name,
+        );
+      }
     }
     const cityLabel =
       placeTypeFromId(destinationPlace.id) === 'city'
@@ -543,6 +561,18 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
     }
   });
 
+  visitedPlaces.forEach((place) => {
+    const placeType = placeTypeFromId(place.id);
+    if (placeType === 'city' || placeType === 'airport') {
+      const countryCode = normalizeCode(place.country_code);
+      const cityLabel = placeType === 'city' ? place.name : place.municipality || place.name;
+      if (cityLabel && !destinationCityLabels.has(cityLabel)) {
+        destinationCityLabels.add(cityLabel);
+        incrementPlaceCounter(cityCounts, `${countryCode}:${normalizeName(cityLabel)}`, cityLabel);
+      }
+    }
+  });
+
   const homeAirportCounts = new Map<string, number>();
   tripLogs.forEach((trip) => incrementCounter(homeAirportCounts, trip.origin_place_id));
   const rankedHomeAirports = Array.from(homeAirportCounts.entries()).sort((a, b) => b[1] - a[1]);
@@ -552,6 +582,7 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
   let farthestDestinationFromHome: { place: TravelPlace; miles: number } | null = null;
   let closestDestinationToHome: { place: TravelPlace; miles: number } | null = null;
   let farthestTripFromHome: { trip: DatedTrip; miles: number; place: TravelPlace } | null = null;
+  let longestTrip: { trip: DatedTrip; miles: number; originName: string; destinationName: string } | null = null;
 
   if (homeAirport?.lat !== undefined && homeAirport.lon !== undefined) {
     destinationPlaces.forEach((place) => {
@@ -590,6 +621,17 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
   });
 
   datedTrips.forEach((trip) => {
+    const originPlace = placesById.get(trip.origin_place_id);
+    const destinationPlace = placesById.get(trip.destination_place_id);
+    const tripMiles = trip.estimated_miles || 0;
+    if (!longestTrip || tripMiles > longestTrip.miles) {
+      longestTrip = {
+        trip,
+        miles: tripMiles,
+        originName: originPlace?.name ?? 'Origin',
+        destinationName: destinationPlace?.name ?? 'Destination',
+      };
+    }
     const routePoints = Array.isArray(trip.route_points) ? trip.route_points : [];
     const segments = Array.isArray(trip.segments) ? trip.segments : [];
     totalFlightLegs += Math.max(1, segments.length || 1);
@@ -731,17 +773,20 @@ function buildContext(places: TravelPlacesByType, visits: TravelVisit[], tripLog
     tripYears,
     tripSeasons,
     travelDaysByYear,
+    explicitVisitedCountryCodes,
     allCountryCodes,
     destinationCityLabels,
     destinationCounts,
     destinationFirstSeenByPlaceId,
     countryCounts,
     cityCounts,
+    homeCountryCode: normalizedHomeCountryCode,
     homeAirport,
     homeAirportTripCount,
     farthestDestinationFromHome,
     closestDestinationToHome,
     farthestTripFromHome,
+    longestTrip,
     longSingleLeg,
     maxCountriesInTrip,
     borderCrossingsByAir,
@@ -783,13 +828,18 @@ export function buildTravelDataContext(args: {
   places: TravelPlacesByType;
   visits: TravelVisit[];
   tripLogs: TravelTripLog[];
+  homeCountryCode?: string;
 }): TravelDataContext {
-  return buildContext(args.places, args.visits, args.tripLogs);
+  return buildContext(args.places, args.visits, args.tripLogs, args.homeCountryCode);
 }
 
 const calculators: Record<TravelStatSelector, (context: DerivedContext) => TravelStatResult | null> = {
   total_trips: (context) => makeCountResult('Total trips taken', context.datedTrips.length),
-  total_countries: (context) => makeCountResult('Total countries visited', context.allCountryCodes.size),
+  total_countries: (context) =>
+    makeCountResult(
+      'Total countries visited',
+      context.explicitVisitedCountryCodes.size || context.allCountryCodes.size,
+    ),
   total_cities: (context) => makeCountResult('Total cities visited', context.destinationCityLabels.size),
   total_destinations: (context) => makeCountResult('Total destinations visited', context.destinationPlaces.length),
   total_days_traveled: (context) => makeDaysResult('Total days traveled', context.uniqueTripDateKeys.length),
@@ -812,12 +862,12 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
     };
   },
   farthest_trip_from_home: (context) =>
-    !context.farthestTripFromHome || !context.homeAirport
+    !context.longestTrip
       ? null
       : {
-          displayValue: formatMiles(context.farthestTripFromHome.miles),
-          detail: `${context.homeAirport.name} -> ${context.farthestTripFromHome.place.name}`,
-          sentence: `Your farthest trip from home spans ${formatMiles(context.farthestTripFromHome.miles)} from ${context.homeAirport.name} to ${context.farthestTripFromHome.place.name}.`,
+          displayValue: formatMiles(context.longestTrip.miles),
+          detail: `${context.longestTrip.originName} -> ${context.longestTrip.destinationName}`,
+          sentence: `Your farthest trip spans ${formatMiles(context.longestTrip.miles)} from ${context.longestTrip.originName} to ${context.longestTrip.destinationName}.`,
         },
   domestic_trips: (context) =>
     makeCountResult(
@@ -939,8 +989,8 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
   southernmost_point: (context) => (!context.southernmost ? null : { displayValue: context.southernmost.name, detail: `${context.southernmost.value.toFixed(2)}° latitude`, sentence: `${context.southernmost.name} is your southernmost point at ${context.southernmost.value.toFixed(2)}° latitude.` }),
   easternmost_point: (context) => (!context.easternmost ? null : { displayValue: context.easternmost.name, detail: `${context.easternmost.value.toFixed(2)}° longitude`, sentence: `${context.easternmost.name} is your easternmost point at ${context.easternmost.value.toFixed(2)}° longitude.` }),
   westernmost_point: (context) => (!context.westernmost ? null : { displayValue: context.westernmost.name, detail: `${context.westernmost.value.toFixed(2)}° longitude`, sentence: `${context.westernmost.name} is your westernmost point at ${context.westernmost.value.toFixed(2)}° longitude.` }),
-  highest_elevation: (context) => (!context.highestElevation ? null : { displayValue: context.highestElevation.name, detail: `${Math.round(context.highestElevation.value).toLocaleString()} m`, sentence: `${context.highestElevation.name} is your highest elevation reached at ${Math.round(context.highestElevation.value).toLocaleString()} m.` }),
-  lowest_elevation: (context) => (!context.lowestElevation ? null : { displayValue: context.lowestElevation.name, detail: `${Math.round(context.lowestElevation.value).toLocaleString()} m`, sentence: `${context.lowestElevation.name} is your lowest elevation visited at ${Math.round(context.lowestElevation.value).toLocaleString()} m.` }),
+  highest_elevation: (context) => (!context.highestElevation ? null : { displayValue: context.highestElevation.name, detail: formatElevation(context.highestElevation.value), sentence: `${context.highestElevation.name} is your highest elevation reached at ${formatElevation(context.highestElevation.value)}.` }),
+  lowest_elevation: (context) => (!context.lowestElevation ? null : { displayValue: context.lowestElevation.name, detail: formatElevation(context.lowestElevation.value), sentence: `${context.lowestElevation.name} is your lowest elevation visited at ${formatElevation(context.lowestElevation.value)}.` }),
   closest_destination_to_home: (context) => (!context.closestDestinationToHome || !context.homeAirport ? null : { displayValue: context.closestDestinationToHome.place.name, detail: `${formatMiles(context.closestDestinationToHome.miles)} from ${context.homeAirport.name}`, sentence: `${context.closestDestinationToHome.place.name} is your closest destination to home at ${formatMiles(context.closestDestinationToHome.miles)} from ${context.homeAirport.name}.` }),
   timezones_visited: (context) => makeCountResult('Number of time zones visited', context.timezonesVisited.size),
   total_latitude_range: (context) => (context.totalLatitudeRange === null ? null : { displayValue: `${context.totalLatitudeRange.toFixed(2)}°`, sentence: `Your total latitude range covered is ${context.totalLatitudeRange.toFixed(2)}°.` }),
@@ -962,7 +1012,7 @@ const supportedDefinitions: TravelStatDefinition[] = [
   { id: 'hero_total_days', label: 'Total days traveled', section: 'time', priority: 5, description: 'Distinct calendar days with a logged trip.', selector: 'total_days_traveled', visibilityTier: 'hero' },
   { id: 'hero_most_country', label: 'Most visited country', section: 'trips', priority: 6, description: 'Country with the most tracked arrivals and visits.', selector: 'most_visited_country', visibilityTier: 'hero' },
   { id: 'hero_most_city', label: 'Most visited city', section: 'trips', priority: 7, description: 'City with the most tracked arrivals.', selector: 'most_visited_city', visibilityTier: 'hero' },
-  { id: 'hero_farthest_trip', label: 'Farthest trip from home', section: 'trips', priority: 8, description: 'Farthest destination from the inferred home airport.', selector: 'farthest_trip_from_home', visibilityTier: 'hero' },
+  { id: 'hero_farthest_trip', label: 'Farthest trip', section: 'trips', priority: 8, description: 'Longest logged trip from origin to destination.', selector: 'farthest_trip_from_home', visibilityTier: 'hero' },
   { id: 'hero_domestic', label: 'Number of domestic trips', section: 'trips', priority: 9, description: 'Trips whose origin and destination share a country.', selector: 'domestic_trips', visibilityTier: 'hero' },
   { id: 'hero_international', label: 'Number of international trips', section: 'trips', priority: 10, description: 'Trips whose origin and destination cross a country border.', selector: 'international_trips', visibilityTier: 'hero' },
   { id: 'hero_distance', label: 'Total distance traveled', section: 'distance_transit', priority: 11, description: 'Estimated total flight mileage from logged trips.', selector: 'total_distance', visibilityTier: 'hero' },
@@ -991,7 +1041,7 @@ const expandableDefinitions: TravelStatDefinition[] = [
   ['trips_total_days', 'Total days traveled', 'trips', 5, 'total_days_traveled'],
   ['trips_most_country', 'Most visited country', 'trips', 6, 'most_visited_country'],
   ['trips_most_city', 'Most visited city', 'trips', 7, 'most_visited_city'],
-  ['trips_farthest_trip', 'Farthest trip from home', 'trips', 8, 'farthest_trip_from_home'],
+  ['trips_farthest_trip', 'Farthest trip', 'trips', 8, 'farthest_trip_from_home'],
   ['trips_domestic', 'Number of domestic trips', 'trips', 9, 'domestic_trips'],
   ['trips_international', 'Number of international trips', 'trips', 10, 'international_trips'],
   ['distance_total', 'Total distance traveled', 'distance_transit', 1, 'total_distance'],
@@ -1067,8 +1117,15 @@ const unsupportedDefinitions: TravelStatDefinition[] = [
 
 const registry = [...supportedDefinitions, ...expandableDefinitions, ...unsupportedDefinitions];
 
-export function buildTravelStatsModel(args: { places: TravelPlacesByType; visits: TravelVisit[]; tripLogs: TravelTripLog[] }): TravelStatsModel {
+export function buildTravelStatsModel(args: {
+  places: TravelPlacesByType;
+  visits: TravelVisit[];
+  tripLogs: TravelTripLog[];
+  measurementSystem?: MeasurementSystem;
+  homeCountryCode?: string;
+}): TravelStatsModel {
   try {
+    activeMeasurementSystem = args.measurementSystem === 'metric' ? 'metric' : 'imperial';
     const context = buildTravelDataContext(args);
     const evaluated = registry
       .map((definition) => {

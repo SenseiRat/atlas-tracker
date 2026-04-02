@@ -52,7 +52,7 @@ OIDC_COOKIE_SECURE = os.environ.get("OIDC_COOKIE_SECURE", "0").strip().lower() i
 LOCAL_USER_COOKIE = os.environ.get("LOCAL_USER_COOKIE", "world_tracker_local_user").strip() or "world_tracker_local_user"
 PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "260000"))
 DATA_SYNC_INTERVAL_SECONDS = max(int(os.environ.get("DATA_SYNC_INTERVAL_SECONDS", "3600")), 0)
-DATA_SYNC_SCHEMA_VERSION = 2
+DATA_SYNC_SCHEMA_VERSION = 3
 SourceCollector = Callable[[Any, Dict[str, Any]], Tuple[List[tuple], Dict[str, Tuple[str, str]]]]
 
 SOURCE_DATASET_DEFINITIONS = {
@@ -61,7 +61,7 @@ SOURCE_DATASET_DEFINITIONS = {
     "cities": {"filename": "cities.json", "required": True, "auto_sync": True},
     "airports": {"filename": "airports.json", "required": True, "auto_sync": True},
     "sites": {
-        "filenames": ["sites.json", "whc001.json", "darksky.json"],
+        "filenames": ["whc001.json", "darksky.json", "festivals.json", "michelin_restaurants.json"],
         "required": True,
         "auto_sync": True,
         "empty_payload": [],
@@ -117,6 +117,9 @@ SQLITE_SCHEMA_STATEMENTS = [
         display_name TEXT,
         password_hash TEXT,
         role TEXT NOT NULL DEFAULT 'user',
+        theme_preference TEXT NOT NULL DEFAULT 'dark',
+        measurement_system TEXT NOT NULL DEFAULT 'imperial',
+        default_profile_id INTEGER,
         created_at TEXT NOT NULL,
         last_login_at TEXT NOT NULL,
         UNIQUE (oidc_issuer, oidc_subject)
@@ -128,6 +131,7 @@ SQLITE_SCHEMA_STATEMENTS = [
         owner_user_id INTEGER,
         name TEXT NOT NULL UNIQUE,
         color TEXT NOT NULL DEFAULT '#22c55e',
+        home_country_code TEXT,
         is_public INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
         ,
@@ -209,6 +213,9 @@ POSTGRES_SCHEMA_STATEMENTS = [
         display_name TEXT,
         password_hash TEXT,
         role TEXT NOT NULL DEFAULT 'user',
+        theme_preference TEXT NOT NULL DEFAULT 'dark',
+        measurement_system TEXT NOT NULL DEFAULT 'imperial',
+        default_profile_id BIGINT,
         created_at TEXT NOT NULL,
         last_login_at TEXT NOT NULL,
         UNIQUE (oidc_issuer, oidc_subject)
@@ -220,6 +227,7 @@ POSTGRES_SCHEMA_STATEMENTS = [
         owner_user_id BIGINT REFERENCES users (id) ON DELETE CASCADE,
         name TEXT NOT NULL UNIQUE,
         color TEXT NOT NULL DEFAULT '#22c55e',
+        home_country_code TEXT,
         is_public BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TEXT NOT NULL
     )
@@ -341,39 +349,43 @@ if psycopg is not None:
     DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg.IntegrityError)
 
 
-@contextmanager
-def get_db() -> Iterator[DBConnection]:
-    if DB_BACKEND == "postgres":
+def _connect_db(backend: str, settings: Optional[Dict[str, Any]] = None) -> Any:
+    config = settings or {}
+    if backend == "postgres":
         if psycopg is None:
-            raise RuntimeError("psycopg is required when DB_BACKEND is postgres")
+            raise RuntimeError("psycopg is required when using postgres")
+        port_raw = str(config.get("db_port") or DB_PORT).strip()
         conn_kwargs: Dict[str, Any] = {
-            "host": DB_HOST,
-            "port": DB_PORT,
-            "dbname": DB_NAME,
-            "user": DB_USER,
-            "sslmode": DB_SSLMODE or "prefer",
+            "host": str(config.get("db_host") or DB_HOST).strip(),
+            "port": int(port_raw or DB_PORT),
+            "dbname": str(config.get("db_name") or DB_NAME).strip(),
+            "user": str(config.get("db_user") or DB_USER).strip(),
+            "sslmode": str(config.get("db_sslmode") or DB_SSLMODE or "prefer").strip() or "prefer",
             "row_factory": dict_row,
         }
-        if DB_PASSWORD:
-            conn_kwargs["password"] = DB_PASSWORD
-        conn = psycopg.connect(**conn_kwargs)
-        try:
-            yield DBConnection(conn, DB_BACKEND)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-        return
+        password = str(config.get("db_password") or DB_PASSWORD)
+        if password:
+            conn_kwargs["password"] = password
+        if not conn_kwargs["host"] or not conn_kwargs["dbname"]:
+            raise HTTPException(status_code=400, detail="Postgres host and database name are required")
+        return psycopg.connect(**conn_kwargs)
 
-    conn = sqlite3.connect(DB_PATH, timeout=max(SQLITE_BUSY_TIMEOUT_MS, 0) / 1000)
+    sqlite_path_raw = str(config.get("sqlite_db_path") or DB_PATH).strip()
+    sqlite_path = Path(sqlite_path_raw).expanduser()
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(sqlite_path, timeout=max(SQLITE_BUSY_TIMEOUT_MS, 0) / 1000)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {max(SQLITE_BUSY_TIMEOUT_MS, 0)}")
     if SQLITE_ENABLE_WAL:
         conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+@contextmanager
+def get_db() -> Iterator[DBConnection]:
+    conn = _connect_db(DB_BACKEND)
     try:
         yield DBConnection(conn, DB_BACKEND)
         conn.commit()
@@ -384,61 +396,95 @@ def get_db() -> Iterator[DBConnection]:
         conn.close()
 
 
+@contextmanager
+def get_db_for_backend(backend: str, settings: Optional[Dict[str, Any]] = None) -> Iterator[DBConnection]:
+    conn = _connect_db(backend, settings)
+    try:
+        yield DBConnection(conn, backend)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _ensure_schema(conn: DBConnection, backend: str) -> None:
+    schema_statements = POSTGRES_SCHEMA_STATEMENTS if backend == "postgres" else SQLITE_SCHEMA_STATEMENTS
+    index_statements = POSTGRES_INDEX_STATEMENTS if backend == "postgres" else SQLITE_INDEX_STATEMENTS
+    for statement in schema_statements:
+        conn.execute(statement)
+    for statement in index_statements:
+        conn.execute(statement)
+
+    if backend == "postgres":
+        user_columns_rows = conn.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'users'
+            """
+        ).fetchall()
+        profile_columns_rows = conn.execute(
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'profiles'
+            """
+        ).fetchall()
+    else:
+        user_columns_rows = conn.execute("PRAGMA table_info(users)").fetchall()
+        profile_columns_rows = conn.execute("PRAGMA table_info(profiles)").fetchall()
+
+    user_columns = {row["name"] for row in user_columns_rows}
+    if "username" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
+    if "password_hash" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+    if "role" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "theme_preference" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN theme_preference TEXT NOT NULL DEFAULT 'dark'")
+    if "measurement_system" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN measurement_system TEXT NOT NULL DEFAULT 'imperial'")
+    if "default_profile_id" not in user_columns:
+        if backend == "postgres":
+            conn.execute("ALTER TABLE users ADD COLUMN default_profile_id BIGINT")
+        else:
+            conn.execute("ALTER TABLE users ADD COLUMN default_profile_id INTEGER")
+
+    profile_columns = {row["name"] for row in profile_columns_rows}
+    if "color" not in profile_columns:
+        conn.execute(
+            f"ALTER TABLE profiles ADD COLUMN color TEXT NOT NULL DEFAULT '{DEFAULT_PROFILE_COLOR}'"
+        )
+    if "owner_user_id" not in profile_columns:
+        conn.execute("ALTER TABLE profiles ADD COLUMN owner_user_id INTEGER")
+    if "home_country_code" not in profile_columns:
+        conn.execute("ALTER TABLE profiles ADD COLUMN home_country_code TEXT")
+    if "is_public" not in profile_columns:
+        if backend == "postgres":
+            conn.execute("ALTER TABLE profiles ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT FALSE")
+        else:
+            conn.execute("ALTER TABLE profiles ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        "UPDATE profiles SET color = ? WHERE color IS NULL OR TRIM(color) = ''",
+        (DEFAULT_PROFILE_COLOR,),
+    )
+    conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''")
+    conn.execute(
+        "UPDATE users SET theme_preference = 'dark' WHERE theme_preference IS NULL OR TRIM(theme_preference) = ''"
+    )
+    conn.execute(
+        "UPDATE users SET measurement_system = 'imperial' WHERE measurement_system IS NULL OR TRIM(measurement_system) = ''"
+    )
+
+
 def init_db() -> None:
     if DB_BACKEND == "sqlite":
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
-        schema_statements = POSTGRES_SCHEMA_STATEMENTS if DB_BACKEND == "postgres" else SQLITE_SCHEMA_STATEMENTS
-        index_statements = POSTGRES_INDEX_STATEMENTS if DB_BACKEND == "postgres" else SQLITE_INDEX_STATEMENTS
-        for statement in schema_statements:
-            conn.execute(statement)
-        for statement in index_statements:
-            conn.execute(statement)
-
-        if DB_BACKEND == "postgres":
-            user_columns_rows = conn.execute(
-                """
-                SELECT column_name AS name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'users'
-                """
-            ).fetchall()
-            profile_columns_rows = conn.execute(
-                """
-                SELECT column_name AS name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'profiles'
-                """
-            ).fetchall()
-        else:
-            user_columns_rows = conn.execute("PRAGMA table_info(users)").fetchall()
-            profile_columns_rows = conn.execute("PRAGMA table_info(profiles)").fetchall()
-
-        user_columns = {row["name"] for row in user_columns_rows}
-        if "username" not in user_columns:
-            conn.execute("ALTER TABLE users ADD COLUMN username TEXT")
-        if "password_hash" not in user_columns:
-            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        if "role" not in user_columns:
-            conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
-
-        profile_columns = {row["name"] for row in profile_columns_rows}
-        if "color" not in profile_columns:
-            conn.execute(
-                f"ALTER TABLE profiles ADD COLUMN color TEXT NOT NULL DEFAULT '{DEFAULT_PROFILE_COLOR}'"
-            )
-        if "owner_user_id" not in profile_columns:
-            conn.execute("ALTER TABLE profiles ADD COLUMN owner_user_id INTEGER")
-        if "is_public" not in profile_columns:
-            if DB_BACKEND == "postgres":
-                conn.execute("ALTER TABLE profiles ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT FALSE")
-            else:
-                conn.execute("ALTER TABLE profiles ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
-        conn.execute(
-            "UPDATE profiles SET color = ? WHERE color IS NULL OR TRIM(color) = ''",
-            (DEFAULT_PROFILE_COLOR,),
-        )
-        conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''")
+        _ensure_schema(conn, DB_BACKEND)
 
 
 def load_json(path: Path) -> Any:
@@ -514,6 +560,15 @@ def normalize_profile_color(raw: Any) -> str:
     return DEFAULT_PROFILE_COLOR
 
 
+def normalize_profile_home_country_code(raw: Any) -> Optional[str]:
+    code = str(raw or "").strip().upper()
+    if not code:
+        return None
+    if re.fullmatch(r"[A-Z]{2,3}", code):
+        return code
+    raise HTTPException(status_code=400, detail="home_country_code must be a 2- or 3-letter country code")
+
+
 def _hash_password(password: str) -> str:
     normalized = str(password or "")
     if len(normalized) < 8:
@@ -552,6 +607,13 @@ def _serialize_user(row: Any) -> Dict[str, Any]:
         "display_name": row.get("display_name") if isinstance(row, dict) else row["display_name"],
         "role": str((row.get("role") if isinstance(row, dict) else row["role"]) or "user"),
         "is_admin": str((row.get("role") if isinstance(row, dict) else row["role"]) or "user") == "admin",
+        "theme_preference": str((row.get("theme_preference") if isinstance(row, dict) else row["theme_preference"]) or "dark"),
+        "measurement_system": str((row.get("measurement_system") if isinstance(row, dict) else row["measurement_system"]) or "imperial"),
+        "default_profile_id": (
+            int((row.get("default_profile_id") if isinstance(row, dict) else row["default_profile_id"]))
+            if (row.get("default_profile_id") if isinstance(row, dict) else row["default_profile_id"]) is not None
+            else None
+        ),
     }
 
 
@@ -587,6 +649,98 @@ def _set_app_settings(conn: DBConnection, settings: Dict[str, Any]) -> None:
         """,
         rows,
     )
+
+
+def _list_table_rows(conn: DBConnection, table: str, columns: List[str]) -> List[Dict[str, Any]]:
+    rows = conn.execute(f"SELECT {', '.join(columns)} FROM {table}").fetchall()
+    return [dict(row) for row in rows]
+
+
+def _same_backend_target(backend: str, settings: Dict[str, Any]) -> bool:
+    if backend != DB_BACKEND:
+        return False
+    if backend == "sqlite":
+        current_path = Path(str(DB_PATH)).expanduser().resolve()
+        target_path = Path(str(settings.get("sqlite_db_path") or DB_PATH)).expanduser().resolve()
+        return current_path == target_path
+    return (
+        str(settings.get("db_host") or DB_HOST).strip() == DB_HOST
+        and str(settings.get("db_name") or DB_NAME).strip() == DB_NAME
+        and str(settings.get("db_user") or DB_USER).strip() == DB_USER
+        and str(settings.get("db_port") or DB_PORT).strip() == str(DB_PORT)
+    )
+
+
+def _clear_target_tables(conn: DBConnection) -> None:
+    for table in ("visits", "trip_logs", "place_source_state", "profiles", "users", "places", "app_settings"):
+        conn.execute(f"DELETE FROM {table}")
+
+
+def _copy_rows(conn: DBConnection, table: str, columns: List[str], rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        return
+    placeholders = ",".join("?" for _ in columns)
+    query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+    conn.executemany(query, [tuple(row.get(column) for column in columns) for row in rows])
+
+
+def _reset_postgres_sequence(conn: DBConnection, table: str, column: str) -> None:
+    conn.execute(
+        f"""
+        SELECT setval(
+            pg_get_serial_sequence('{table}', '{column}'),
+            COALESCE((SELECT MAX({column}) FROM {table}), 1),
+            EXISTS(SELECT 1 FROM {table})
+        )
+        """
+    )
+
+
+def _migrate_database_snapshot(target_backend: str, target_settings: Dict[str, Any], snapshot: Dict[str, List[Dict[str, Any]]]) -> None:
+    with get_db_for_backend(target_backend, target_settings) as target_conn:
+        _ensure_schema(target_conn, target_backend)
+        _clear_target_tables(target_conn)
+        _copy_rows(
+            target_conn,
+            "users",
+            ["id", "username", "oidc_issuer", "oidc_subject", "email", "display_name", "password_hash", "role", "theme_preference", "measurement_system", "default_profile_id", "created_at", "last_login_at"],
+            snapshot["users"],
+        )
+        _copy_rows(
+            target_conn,
+            "profiles",
+            ["id", "owner_user_id", "name", "color", "is_public", "created_at"],
+            snapshot["profiles"],
+        )
+        _copy_rows(
+            target_conn,
+            "places",
+            ["id", "type", "name", "country_code", "lat", "lon", "data"],
+            snapshot["places"],
+        )
+        _copy_rows(
+            target_conn,
+            "visits",
+            ["profile_id", "place_id", "visited_at", "trip_id", "created_at"],
+            snapshot["visits"],
+        )
+        _copy_rows(
+            target_conn,
+            "trip_logs",
+            ["id", "profile_id", "flown_on", "origin_place_id", "destination_place_id", "layover_place_ids", "estimated_miles", "created_at"],
+            snapshot["trip_logs"],
+        )
+        _copy_rows(
+            target_conn,
+            "place_source_state",
+            ["place_id", "source_key", "content_hash", "is_active", "last_seen_at"],
+            snapshot["place_source_state"],
+        )
+        _copy_rows(target_conn, "app_settings", ["key", "value"], snapshot["app_settings"])
+        if target_backend == "postgres":
+            _reset_postgres_sequence(target_conn, "users", "id")
+            _reset_postgres_sequence(target_conn, "profiles", "id")
+            _reset_postgres_sequence(target_conn, "trip_logs", "id")
 
 
 def extract_timezone(item: Dict[str, Any]) -> Optional[str]:
@@ -796,6 +950,46 @@ def infer_country_code_from_text(value: Any, country_name_to_iso3: Dict[str, str
             if suffix in country_name_to_iso3:
                 return country_name_to_iso3[suffix]
     return None
+
+
+def extract_michelin_location_parts(value: Any) -> Tuple[Optional[str], Optional[str]]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return None, None
+    parts = [segment.strip() for segment in text.split(",") if segment.strip()]
+    if not parts:
+        return text, None
+    location = ", ".join(parts[:-1]) if len(parts) > 1 else parts[0]
+    country = parts[-1] if len(parts) > 1 else None
+    return location or None, country or None
+
+
+def extract_michelin_summary_details(value: Any, restaurant_name: Optional[str]) -> Dict[str, Optional[str]]:
+    text = sanitize_markup_text(value)
+    if not text:
+        return {"location": None, "price": None, "cuisine": None}
+    prefix = "Reserve a table "
+    if text.startswith(prefix):
+        text = text[len(prefix):].strip()
+    if restaurant_name and text.startswith(restaurant_name):
+        text = text[len(restaurant_name):].strip(" ,-")
+
+    cuisine = None
+    details_text = text
+    if " · " in text:
+        details_text, cuisine = [part.strip() or None for part in text.rsplit(" · ", 1)]
+
+    price = None
+    price_match = re.search(r"(?P<location>.+?)\s+(?P<price>\$+)$", details_text or "")
+    if price_match:
+        details_text = price_match.group("location").strip()
+        price = price_match.group("price").strip()
+
+    return {
+        "location": details_text or None,
+        "price": price,
+        "cuisine": cuisine,
+    }
 
 
 def extract_darksky_coordinates(value: Any) -> Tuple[Optional[float], Optional[float]]:
@@ -1095,11 +1289,218 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
     country_name_to_iso3: Dict[str, str] = context.setdefault("country_name_to_iso3", {})
     payload_groups = payload
     if not payload_groups or not isinstance(payload_groups, list) or "payload" not in payload_groups[0]:
-        payload_groups = [{"filename": "sites.json", "payload": payload}]
+        payload_groups = [{"filename": "site_dataset", "payload": payload}]
 
     for payload_group in payload_groups:
         filename = str(payload_group.get("filename") or "")
         source_payload = payload_group.get("payload") or []
+        if filename == "festivals.json":
+            source_entries = source_payload.get("entries") if isinstance(source_payload, dict) else source_payload
+            if not isinstance(source_entries, list):
+                source_entries = []
+            for festival in source_entries:
+                name = sanitize_markup_text(festival.get("name")) or "Unknown festival"
+                alternate_names = [
+                    item
+                    for item in (sanitize_markup_text(value) for value in (festival.get("alternate_names") or []))
+                    if item
+                ]
+                country_or_countries = [
+                    item
+                    for item in (sanitize_markup_text(value) for value in (festival.get("country_or_countries") or []))
+                    if item
+                ]
+                resolved_country_codes = [
+                    code
+                    for code in (
+                        infer_country_code_from_text(item, country_name_to_iso3) for item in country_or_countries
+                    )
+                    if code
+                ]
+                country_code = resolved_country_codes[0] if resolved_country_codes else None
+                region = sanitize_markup_text(festival.get("region"))
+                city_or_locality = sanitize_markup_text(festival.get("city_or_locality"))
+                lat = as_float(festival.get("latitude"))
+                lon = as_float(festival.get("longitude"))
+                festival_type = sanitize_markup_text(festival.get("festival_type"))
+                tradition = sanitize_markup_text(festival.get("tradition"))
+                recurrence = sanitize_markup_text(festival.get("recurrence"))
+                date_notes = sanitize_markup_text(festival.get("date_notes"))
+                summary = sanitize_markup_text(festival.get("summary"))
+                tags = [
+                    item for item in (sanitize_markup_text(value) for value in (festival.get("tags") or [])) if item
+                ]
+                site_id = (
+                    festival.get("id")
+                    or f"festival-{slugify(name)}-{slugify(city_or_locality or region or country_code or 'anchor')}"
+                )
+                site_payload = {
+                    "id": site_id,
+                    "name": name,
+                    "sourceType": "festival",
+                    "alternateNames": alternate_names,
+                    "country_code": country_code,
+                    "country_codes": resolved_country_codes,
+                    "countryOrCountries": country_or_countries,
+                    "region": region,
+                    "cityOrLocality": city_or_locality,
+                    "lat": lat,
+                    "lon": lon,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "summary": summary,
+                    "tags": tags,
+                    "category": "festival",
+                    "type": festival_type,
+                    "source": "cultural_festival_anchor",
+                    "source_dataset": filename,
+                    "festival_type": festival_type,
+                    "tradition": tradition,
+                    "recurrence": recurrence,
+                    "date_notes": date_notes,
+                    "globally_famous": bool(festival.get("globally_famous")),
+                    "culturally_significant": bool(festival.get("culturally_significant")),
+                    "heritage_recognized": bool(festival.get("heritage_recognized")),
+                    "metadata": {
+                        "festival_type": festival_type,
+                        "tradition": tradition,
+                        "recurrence": recurrence,
+                        "date_notes": date_notes,
+                        "globally_famous": bool(festival.get("globally_famous")),
+                        "culturally_significant": bool(festival.get("culturally_significant")),
+                        "heritage_recognized": bool(festival.get("heritage_recognized")),
+                    },
+                }
+                place_id = str(site_id)
+                if not place_id.startswith("site-"):
+                    place_id = f"site-{place_id}"
+                rows.append(
+                    (
+                        place_id,
+                        "site",
+                        name,
+                        country_code,
+                        lat,
+                        lon,
+                        json.dumps(site_payload),
+                    )
+                )
+                source_state[place_id] = (
+                    "sites",
+                    hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest(),
+                )
+            continue
+        if filename == "michelin_restaurants.json":
+            restaurant_entries = source_payload.get("restaurants") if isinstance(source_payload, dict) else source_payload
+            if not isinstance(restaurant_entries, list):
+                restaurant_entries = []
+
+            grouped_entries: Dict[str, List[Dict[str, Any]]] = {}
+            for restaurant in restaurant_entries:
+                if not isinstance(restaurant, dict):
+                    continue
+                group_key = str(restaurant.get("link") or restaurant.get("name") or "").strip()
+                if not group_key:
+                    continue
+                grouped_entries.setdefault(group_key, []).append(restaurant)
+
+            for group_key, variants in grouped_entries.items():
+                base_variant = next(
+                    (
+                        item
+                        for item in variants
+                        if sanitize_markup_text(item.get("name"))
+                        and sanitize_markup_text(item.get("name")) != "Reserve a table"
+                        and not str(sanitize_markup_text(item.get("name")) or "").startswith("Reserve a table ")
+                    ),
+                    None,
+                )
+                summary_variant = next(
+                    (
+                        item
+                        for item in variants
+                        if str(sanitize_markup_text(item.get("name")) or "").startswith("Reserve a table ")
+                    ),
+                    None,
+                )
+                representative = base_variant or summary_variant or variants[0]
+                name = sanitize_markup_text(representative.get("name")) or "Unknown restaurant"
+                if name == "Reserve a table":
+                    continue
+
+                summary_details = extract_michelin_summary_details(
+                    summary_variant.get("name") if isinstance(summary_variant, dict) else None,
+                    name,
+                )
+                location_text = (
+                    sanitize_markup_text(representative.get("location"))
+                    or summary_details["location"]
+                )
+                location_label, country_label = extract_michelin_location_parts(location_text)
+                country_code = infer_country_code_from_text(country_label or location_text, country_name_to_iso3)
+                price = sanitize_markup_text(representative.get("price")) or summary_details["price"]
+                cuisine = sanitize_markup_text(representative.get("cuisine")) or summary_details["cuisine"]
+                distinction = sanitize_markup_text(representative.get("distinction")) or "Michelin-starred restaurant"
+                link = str(representative.get("link") or group_key).strip() or None
+                source_page = str(representative.get("source_page") or "").strip() or None
+                image = str(representative.get("image") or "").strip() or None
+                tags = [item for item in [distinction, cuisine, price] if item]
+                site_id = f"michelin-{slugify(link or name)}"
+                site_payload = {
+                    "id": site_id,
+                    "name": name,
+                    "sourceType": "michelin",
+                    "alternateNames": [],
+                    "country_code": country_code,
+                    "country_codes": [country_code] if country_code else [],
+                    "countryOrCountries": [country_label] if country_label else ([country_code] if country_code else []),
+                    "region": None,
+                    "cityOrLocality": location_label,
+                    "lat": None,
+                    "lon": None,
+                    "latitude": None,
+                    "longitude": None,
+                    "summary": ", ".join(item for item in [location_text, cuisine, price] if item) or distinction,
+                    "tags": tags,
+                    "category": "michelin_restaurant",
+                    "type": distinction,
+                    "source": "guide_michelin",
+                    "source_dataset": filename,
+                    "link": link,
+                    "source_page": source_page,
+                    "price": price,
+                    "cuisine": cuisine,
+                    "distinction": distinction,
+                    "image": image,
+                    "metadata": {
+                        "link": link,
+                        "source_page": source_page,
+                        "price": price,
+                        "cuisine": cuisine,
+                        "distinction": distinction,
+                        "image": image,
+                        "location": location_text,
+                    },
+                }
+                place_id = str(site_id)
+                if not place_id.startswith("site-"):
+                    place_id = f"site-{place_id}"
+                rows.append(
+                    (
+                        place_id,
+                        "site",
+                        name,
+                        country_code,
+                        None,
+                        None,
+                        json.dumps(site_payload),
+                    )
+                )
+                source_state[place_id] = (
+                    "sites",
+                    hashlib.sha256(json.dumps(site_payload, sort_keys=True).encode("utf-8")).hexdigest(),
+                )
+            continue
         for site in source_payload:
             if filename == "whc001.json":
                 name = sanitize_markup_text(site.get("name_en") or site.get("name")) or "Unknown site"
@@ -1112,27 +1513,54 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
                 site_id = site.get("id") or site.get("id_no") or site.get("uuid")
                 if site_id is None:
                     site_id = f"unesco-{slugify(name)}-{country_code or 'xx'}-{lat or 'na'}-{lon or 'na'}"
+                states_names = [
+                    item for item in (sanitize_markup_text(value) for value in (site.get("states_names") or [])) if item
+                ]
+                region = sanitize_markup_text(site.get("region"))
+                category_label = sanitize_markup_text(site.get("category"))
+                criteria = sanitize_markup_text(site.get("criteria_txt"))
+                short_description = sanitize_markup_text(site.get("short_description_en"))
                 site_payload = {
                     "id": site_id,
                     "name": name,
+                    "sourceType": "unesco",
+                    "alternateNames": [],
                     "country_code": country_code,
                     "country_codes": country_codes,
+                    "countryOrCountries": states_names or country_codes,
+                    "region": region,
+                    "cityOrLocality": None,
                     "lat": lat,
                     "lon": lon,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "summary": short_description,
+                    "tags": [item for item in [category_label, criteria, region] if item],
                     "category": "heritage_unesco",
+                    "type": category_label or "UNESCO World Heritage Site",
                     "source": "unesco_world_heritage",
                     "source_dataset": filename,
                     "unesco_id": str(site.get("id_no") or "").strip() or None,
                     "unesco_uuid": str(site.get("uuid") or "").strip() or None,
-                    "states_names": [item for item in (sanitize_markup_text(name) for name in (site.get("states_names") or [])) if item],
-                    "region": sanitize_markup_text(site.get("region")),
-                    "category_label": sanitize_markup_text(site.get("category")),
-                    "criteria": sanitize_markup_text(site.get("criteria_txt")),
+                    "states_names": states_names,
+                    "category_label": category_label,
+                    "criteria": criteria,
                     "date_inscribed": site.get("date_inscribed"),
                     "danger": str(site.get("danger") or "").strip().lower() == "true",
                     "transboundary": str(site.get("transboundary") or "").strip().lower() == "true",
-                    "short_description": sanitize_markup_text(site.get("short_description_en")),
+                    "short_description": short_description,
                     "main_image_url": site.get("main_image_url"),
+                    "metadata": {
+                        "unesco_id": str(site.get("id_no") or "").strip() or None,
+                        "unesco_uuid": str(site.get("uuid") or "").strip() or None,
+                        "states_names": states_names,
+                        "category_label": category_label,
+                        "criteria": criteria,
+                        "date_inscribed": site.get("date_inscribed"),
+                        "danger": str(site.get("danger") or "").strip().lower() == "true",
+                        "transboundary": str(site.get("transboundary") or "").strip().lower() == "true",
+                        "main_image_url": site.get("main_image_url"),
+                    },
                 }
                 state_code = None
             elif filename == "darksky.json":
@@ -1148,13 +1576,24 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
                 )
                 raw_slug = str(site.get("slug") or "").strip()
                 site_id = f"darksky-{raw_slug or slugify(name)}"
+                tags = [item for item in [category_label, address] if item]
                 site_payload = {
                     "id": site_id,
                     "name": name,
+                    "sourceType": "dark_sky",
+                    "alternateNames": [],
                     "country_code": country_code,
+                    "countryOrCountries": [country_code] if country_code else [],
+                    "region": None,
+                    "cityOrLocality": address,
                     "lat": lat,
                     "lon": lon,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "summary": excerpt or content,
+                    "tags": tags,
                     "category": normalize_darksky_category(category_label),
+                    "type": category_label,
                     "category_label": category_label,
                     "source": "darksky_international",
                     "source_dataset": filename,
@@ -1165,6 +1604,14 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
                     "short_description": excerpt,
                     "description": content,
                     "designation_type": category_label,
+                    "metadata": {
+                        "slug": str(site.get("slug") or "").strip() or None,
+                        "link": str(site.get("link") or "").strip() or None,
+                        "designation_date": str(site.get("date") or "").strip() or None,
+                        "address": address,
+                        "description": content,
+                        "designation_type": category_label,
+                    },
                 }
                 state_code = None
             else:
@@ -1177,7 +1624,7 @@ def _collect_site_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tupl
                 if site_id is None:
                     site_id = f"{slugify(name)}-{country_code or 'xx'}-{lat or 'na'}-{lon or 'na'}"
                 site_payload = dict(site)
-                site_payload.setdefault("source_dataset", filename or "sites.json")
+                site_payload.setdefault("source_dataset", filename or "site_dataset")
 
             place_id = str(site_id)
             if not place_id.startswith("site-"):
@@ -2161,9 +2608,15 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
     country_text = str(item.get("country_code") or "").strip()
     location_parts = [part for part in [municipality, state_code, country_text] if part]
     country_codes = data.get("country_codes")
+    alternate_names = [str(value).strip() for value in (data.get("alternateNames") or []) if str(value).strip()]
+    tags = [str(value).strip() for value in (data.get("tags") or []) if str(value).strip()]
+    country_or_countries = [
+        str(value).strip() for value in (data.get("countryOrCountries") or []) if str(value).strip()
+    ]
 
     item["state_code"] = state_code
     item["category"] = str(data.get("category") or "").strip() or None
+    item["type"] = str(data.get("type") or "").strip() or None
     item["airport_code"] = extract_airport_code(data)
     item["airport_type"] = str(data.get("type") or "").strip().lower() or None
     item["municipality"] = municipality
@@ -2178,6 +2631,16 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
     item["continent"] = extract_continent_name(data) if place_type == "country" else None
     item["country_codes"] = [str(code).strip().upper() for code in country_codes if str(code).strip()] if isinstance(country_codes, list) else None
     item["source"] = str(data.get("source") or data.get("source_dataset") or "").strip() or None
+    item["sourceType"] = str(data.get("sourceType") or "").strip() or None
+    item["alternateNames"] = alternate_names
+    item["countryOrCountries"] = country_or_countries
+    item["region"] = str(data.get("region") or "").strip() or None
+    item["cityOrLocality"] = str(data.get("cityOrLocality") or "").strip() or municipality
+    item["latitude"] = as_float(data.get("latitude", item.get("lat")))
+    item["longitude"] = as_float(data.get("longitude", item.get("lon")))
+    item["summary"] = str(data.get("summary") or data.get("short_description") or "").strip() or None
+    item["tags"] = tags
+    item["metadata"] = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
 
     if place_type == "state" and not str(item.get("name") or "").strip():
         fallback_code = state_code or str(item.get("id") or "").split("-")[-1].upper()
@@ -2190,7 +2653,7 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
 def _get_local_users(conn: DBConnection) -> List[Dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT id, username, email, display_name, role
+        SELECT id, username, email, display_name, role, theme_preference, measurement_system, default_profile_id
         FROM users
         WHERE oidc_issuer = 'local'
         ORDER BY LOWER(COALESCE(display_name, username, email, ''))
@@ -2205,7 +2668,7 @@ def _get_local_user_by_cookie(request: Request, conn: DBConnection) -> Optional[
         return None
     user = conn.execute(
         """
-        SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role
+        SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role, theme_preference, measurement_system, default_profile_id
         FROM users
         WHERE id = ? AND oidc_issuer = 'local'
         """,
@@ -2227,7 +2690,7 @@ def _require_user(request: Request, conn: DBConnection) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="Invalid session")
         user = conn.execute(
             """
-            SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role
+            SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role, theme_preference, measurement_system, default_profile_id
             FROM users
             WHERE id = ? AND oidc_issuer = ? AND oidc_subject = ?
             """,
@@ -2259,7 +2722,7 @@ def _optional_user(request: Request, conn: DBConnection) -> Optional[Dict[str, A
             return None
         user = conn.execute(
             """
-            SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role
+            SELECT id, username, oidc_issuer, oidc_subject, email, display_name, role, theme_preference, measurement_system, default_profile_id
             FROM users
             WHERE id = ? AND oidc_issuer = ? AND oidc_subject = ?
             """,
@@ -2310,6 +2773,7 @@ def _normalize_profile_row(row: Any, viewer_user_id: Optional[int]) -> Dict[str,
         "id": row["id"],
         "name": row["name"],
         "color": normalize_profile_color(row["color"]),
+        "home_country_code": normalize_profile_home_country_code(row["home_country_code"]) if row["home_country_code"] else None,
         "is_public": bool(row["is_public"]),
         "owner_user_id": owner_user_id,
         "is_owned": is_owned,
@@ -2340,7 +2804,7 @@ def _can_read_profile(conn: DBConnection, profile_id: int, user_id: Optional[int
 
 def _require_profile_owner(conn: DBConnection, profile_id: int, user_id: int) -> Dict[str, Any]:
     profile = conn.execute(
-        "SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?",
+        "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
         (profile_id,),
     ).fetchone()
     if not profile:
@@ -2402,6 +2866,22 @@ async def update_auth_account(payload: Dict[str, Any], request: Request) -> Dict
         display_name = str(payload.get("display_name") or "").strip()
         if not display_name:
             raise HTTPException(status_code=400, detail="Display name is required")
+        theme_preference = str(payload.get("theme_preference") or user.get("theme_preference") or "dark").strip().lower()
+        if theme_preference not in {"light", "dark"}:
+            raise HTTPException(status_code=400, detail="Theme must be light or dark")
+        measurement_system = str(payload.get("measurement_system") or user.get("measurement_system") or "imperial").strip().lower()
+        if measurement_system not in {"metric", "imperial"}:
+            raise HTTPException(status_code=400, detail="Measurement system must be metric or imperial")
+        default_profile_raw = payload.get("default_profile_id")
+        default_profile_id: Optional[int]
+        if default_profile_raw in {None, "", "null"}:
+            default_profile_id = None
+        else:
+            try:
+                default_profile_id = int(default_profile_raw)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail="default_profile_id must be an integer or null") from exc
+            _can_read_profile(conn, default_profile_id, int(user["id"]))
 
         username = user.get("username")
         if str(user.get("oidc_issuer") or "") == "local":
@@ -2413,8 +2893,8 @@ async def update_auth_account(payload: Dict[str, Any], request: Request) -> Dict
 
         try:
             conn.execute(
-                "UPDATE users SET username = ?, display_name = ? WHERE id = ?",
-                (username, display_name, int(user["id"])),
+                "UPDATE users SET username = ?, display_name = ?, theme_preference = ?, measurement_system = ?, default_profile_id = ? WHERE id = ?",
+                (username, display_name, theme_preference, measurement_system, default_profile_id, int(user["id"])),
             )
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Username already exists") from exc
@@ -2426,7 +2906,7 @@ async def update_auth_account(payload: Dict[str, Any], request: Request) -> Dict
             )
 
         updated = conn.execute(
-            "SELECT id, username, email, display_name, role FROM users WHERE id = ?",
+            "SELECT id, username, email, display_name, role, theme_preference, measurement_system, default_profile_id FROM users WHERE id = ?",
             (int(user["id"]),),
         ).fetchone()
     return _serialize_user(updated)
@@ -2654,7 +3134,7 @@ async def get_profiles(request: Request) -> List[Dict[str, Any]]:
         filter_sql, filter_params = _accessible_profile_filter_sql("", user_id)
         rows = conn.execute(
             f"""
-            SELECT id, name, color, is_public, owner_user_id
+            SELECT id, name, color, home_country_code, is_public, owner_user_id
             FROM profiles
             WHERE {filter_sql}
             ORDER BY CASE WHEN owner_user_id = ? THEN 0 ELSE 1 END, LOWER(name)
@@ -2670,21 +3150,22 @@ async def create_profile(payload: Dict[str, Any], request: Request) -> Dict[str,
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     color = normalize_profile_color(payload.get("color"))
+    home_country_code = normalize_profile_home_country_code(payload.get("home_country_code"))
     is_public = bool(payload.get("is_public"))
     now = datetime.utcnow().isoformat()
     with get_db() as conn:
         owner_user_id = _require_user(request, conn)["id"]
         try:
             cursor = conn.execute(
-                "INSERT INTO profiles (owner_user_id, name, color, is_public, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
-                (owner_user_id, name, color, is_public, now),
+                "INSERT INTO profiles (owner_user_id, name, color, home_country_code, is_public, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                (owner_user_id, name, color, home_country_code, is_public, now),
             )
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
         inserted_row = cursor.fetchone()
         profile_id = int(inserted_row["id"] if isinstance(inserted_row, dict) else inserted_row[0])
         row = conn.execute(
-            "SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?",
+            "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
             (profile_id,),
         ).fetchone()
     return _normalize_profile_row(row, int(owner_user_id))
@@ -2707,19 +3188,23 @@ async def update_profile(profile_id: int, payload: Dict[str, Any], request: Requ
             color = normalize_profile_color(payload.get("color"))
         else:
             color = normalize_profile_color(profile["color"])
+        if "home_country_code" in payload:
+            home_country_code = normalize_profile_home_country_code(payload.get("home_country_code"))
+        else:
+            home_country_code = normalize_profile_home_country_code(profile["home_country_code"]) if profile["home_country_code"] else None
         if "is_public" in payload:
             is_public = bool(payload.get("is_public"))
         else:
             is_public = bool(profile.get("is_public"))
         try:
             conn.execute(
-                "UPDATE profiles SET name = ?, color = ?, is_public = ? WHERE id = ?",
-                (name, color, is_public, profile_id),
+                "UPDATE profiles SET name = ?, color = ?, home_country_code = ?, is_public = ? WHERE id = ?",
+                (name, color, home_country_code, is_public, profile_id),
             )
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
         row = conn.execute(
-            "SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?",
+            "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
             (profile_id,),
         ).fetchone()
     return _normalize_profile_row(row, int(user["id"]))
@@ -2730,6 +3215,7 @@ async def delete_profile(profile_id: int, request: Request) -> Dict[str, Any]:
     with get_db() as conn:
         user = _require_user(request, conn)
         _require_profile_owner(conn, profile_id, user["id"])
+        conn.execute("UPDATE users SET default_profile_id = NULL WHERE default_profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
     return {"status": "ok"}
 
@@ -2740,7 +3226,7 @@ async def admin_get_users(request: Request) -> List[Dict[str, Any]]:
         _require_admin(request, conn)
         rows = conn.execute(
             """
-            SELECT id, username, email, display_name, role
+            SELECT id, username, email, display_name, role, theme_preference, measurement_system, default_profile_id
             FROM users
             ORDER BY LOWER(COALESCE(display_name, username, email, '')), id
             """
@@ -2765,7 +3251,10 @@ async def admin_create_user(payload: Dict[str, Any], request: Request) -> Dict[s
 async def admin_update_user(user_id: int, payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     with get_db() as conn:
         admin_user = _require_admin(request, conn)
-        row = conn.execute("SELECT id, username, display_name, oidc_issuer, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, username, display_name, oidc_issuer, role, theme_preference, measurement_system, default_profile_id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
         next_role = str(payload.get("role") or row["role"] or "user").strip().lower()
@@ -2787,7 +3276,7 @@ async def admin_update_user(user_id: int, payload: Dict[str, Any], request: Requ
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Username already exists") from exc
         updated = conn.execute(
-            "SELECT id, username, email, display_name, role FROM users WHERE id = ?",
+            "SELECT id, username, email, display_name, role, theme_preference, measurement_system, default_profile_id FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
     return _serialize_user(updated)
@@ -2816,6 +3305,10 @@ async def admin_delete_user(user_id: int, request: Request) -> Dict[str, Any]:
         row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
+        conn.execute(
+            "UPDATE users SET default_profile_id = NULL WHERE default_profile_id IN (SELECT id FROM profiles WHERE owner_user_id = ?)",
+            (user_id,),
+        )
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     return {"status": "ok"}
 
@@ -2826,7 +3319,7 @@ async def admin_get_profiles(request: Request) -> List[Dict[str, Any]]:
         _require_admin(request, conn)
         rows = conn.execute(
             """
-            SELECT p.id, p.name, p.color, p.is_public, p.owner_user_id, u.display_name, u.username
+            SELECT p.id, p.name, p.color, p.home_country_code, p.is_public, p.owner_user_id, u.display_name, u.username
             FROM profiles p
             LEFT JOIN users u ON u.id = p.owner_user_id
             ORDER BY LOWER(p.name), p.id
@@ -2845,6 +3338,7 @@ async def admin_create_profile(payload: Dict[str, Any], request: Request) -> Dic
     name = str(payload.get("name") or "").strip()
     owner_user_id = payload.get("owner_user_id")
     color = normalize_profile_color(payload.get("color"))
+    home_country_code = normalize_profile_home_country_code(payload.get("home_country_code"))
     is_public = bool(payload.get("is_public"))
     if not isinstance(owner_user_id, int):
         raise HTTPException(status_code=400, detail="owner_user_id is required")
@@ -2858,13 +3352,13 @@ async def admin_create_profile(payload: Dict[str, Any], request: Request) -> Dic
             raise HTTPException(status_code=404, detail="Owner user not found")
         try:
             inserted = conn.execute(
-                "INSERT INTO profiles (owner_user_id, name, color, is_public, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
-                (owner_user_id, name, color, is_public, now),
+                "INSERT INTO profiles (owner_user_id, name, color, home_country_code, is_public, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                (owner_user_id, name, color, home_country_code, is_public, now),
             ).fetchone()
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
         profile_id = int(inserted["id"] if isinstance(inserted, dict) else inserted[0])
-        row = conn.execute("SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        row = conn.execute("SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
     return _normalize_profile_row(row, owner_user_id)
 
 
@@ -2872,20 +3366,21 @@ async def admin_create_profile(payload: Dict[str, Any], request: Request) -> Dic
 async def admin_update_profile(profile_id: int, payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     with get_db() as conn:
         _require_admin(request, conn)
-        row = conn.execute("SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        row = conn.execute("SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Profile not found")
         name = str(payload.get("name") or row["name"]).strip()
         color = normalize_profile_color(payload.get("color") if "color" in payload else row["color"])
+        home_country_code = normalize_profile_home_country_code(payload.get("home_country_code")) if "home_country_code" in payload else (normalize_profile_home_country_code(row["home_country_code"]) if row["home_country_code"] else None)
         is_public = bool(payload.get("is_public")) if "is_public" in payload else bool(row["is_public"])
         owner_user_id = payload.get("owner_user_id", row["owner_user_id"])
         if owner_user_id is not None and not isinstance(owner_user_id, int):
             raise HTTPException(status_code=400, detail="owner_user_id must be an integer or null")
         conn.execute(
-            "UPDATE profiles SET name = ?, color = ?, is_public = ?, owner_user_id = ? WHERE id = ?",
-            (name, color, is_public, owner_user_id, profile_id),
+            "UPDATE profiles SET name = ?, color = ?, home_country_code = ?, is_public = ?, owner_user_id = ? WHERE id = ?",
+            (name, color, home_country_code, is_public, owner_user_id, profile_id),
         )
-        updated = conn.execute("SELECT id, name, color, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        updated = conn.execute("SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
     return _normalize_profile_row(updated, owner_user_id if isinstance(owner_user_id, int) else None)
 
 
@@ -2896,6 +3391,7 @@ async def admin_delete_profile(profile_id: int, request: Request) -> Dict[str, A
         row = conn.execute("SELECT id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Profile not found")
+        conn.execute("UPDATE users SET default_profile_id = NULL WHERE default_profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
     return {"status": "ok"}
 
@@ -2933,6 +3429,72 @@ async def admin_update_settings(payload: Dict[str, Any], request: Request) -> Di
         settings = _get_app_settings(conn)
     settings["restart_required"] = True
     return settings
+
+
+@app.post("/api/admin/settings/migrate")
+async def admin_migrate_settings(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
+    target_backend = str(payload.get("preferred_db_backend") or "").strip().lower()
+    if target_backend not in {"sqlite", "postgres"}:
+        raise HTTPException(status_code=400, detail="preferred_db_backend must be sqlite or postgres")
+
+    updates = {
+        "preferred_db_backend": target_backend,
+        "auth_mode": str(payload.get("auth_mode") or "local").strip().lower(),
+        "oidc_issuer": str(payload.get("oidc_issuer") or "").strip(),
+        "oidc_client_id": str(payload.get("oidc_client_id") or "").strip(),
+        "oidc_client_secret": str(payload.get("oidc_client_secret") or "").strip(),
+        "db_host": str(payload.get("db_host") or "").strip(),
+        "db_port": str(payload.get("db_port") or "").strip(),
+        "db_name": str(payload.get("db_name") or "").strip(),
+        "db_user": str(payload.get("db_user") or "").strip(),
+        "db_password": str(payload.get("db_password") or "").strip(),
+        "sqlite_db_path": str(payload.get("sqlite_db_path") or "").strip(),
+    }
+    if updates["auth_mode"] not in {"local", "oidc"}:
+        raise HTTPException(status_code=400, detail="auth_mode must be local or oidc")
+    if _same_backend_target(target_backend, updates):
+        raise HTTPException(status_code=400, detail="Migration target must be different from the current active database")
+
+    with get_db() as source_conn:
+        _require_admin(request, source_conn)
+        _set_app_settings(source_conn, updates)
+        current_settings = _get_app_settings(source_conn)
+        current_settings.update(updates)
+        snapshot = {
+            "users": _list_table_rows(
+                source_conn,
+                "users",
+                ["id", "username", "oidc_issuer", "oidc_subject", "email", "display_name", "password_hash", "role", "theme_preference", "measurement_system", "default_profile_id", "created_at", "last_login_at"],
+            ),
+            "profiles": _list_table_rows(source_conn, "profiles", ["id", "owner_user_id", "name", "color", "home_country_code", "is_public", "created_at"]),
+            "places": _list_table_rows(source_conn, "places", ["id", "type", "name", "country_code", "lat", "lon", "data"]),
+            "visits": _list_table_rows(source_conn, "visits", ["profile_id", "place_id", "visited_at", "trip_id", "created_at"]),
+            "trip_logs": _list_table_rows(
+                source_conn,
+                "trip_logs",
+                ["id", "profile_id", "flown_on", "origin_place_id", "destination_place_id", "layover_place_ids", "estimated_miles", "created_at"],
+            ),
+            "place_source_state": _list_table_rows(
+                source_conn,
+                "place_source_state",
+                ["place_id", "source_key", "content_hash", "is_active", "last_seen_at"],
+            ),
+            "app_settings": [{"key": str(key), "value": str(value)} for key, value in current_settings.items() if value is not None],
+        }
+
+    _migrate_database_snapshot(target_backend, updates, snapshot)
+
+    response = dict(current_settings)
+    response["restart_required"] = True
+    response["migration_summary"] = {
+        "target_backend": target_backend,
+        "users": len(snapshot["users"]),
+        "profiles": len(snapshot["profiles"]),
+        "places": len(snapshot["places"]),
+        "visits": len(snapshot["visits"]),
+        "trip_logs": len(snapshot["trip_logs"]),
+    }
+    return response
 
 
 @app.get("/api/places")

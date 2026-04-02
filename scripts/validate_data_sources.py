@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_SOURCES_DIR = ROOT / "data_sources"
+SITE_DATASET_FILENAMES = ("whc001.json", "darksky.json", "festivals.json", "michelin_restaurants.json")
 
 
 def load_json(path: Path) -> Any:
@@ -60,12 +61,37 @@ def count_missing_point_fields(rows: Iterable[Dict[str, Any]]) -> int:
     return missing
 
 
+def load_site_rows() -> list[Dict[str, Any]]:
+    rows: list[Dict[str, Any]] = []
+    for filename in SITE_DATASET_FILENAMES:
+        payload = load_json(DATA_SOURCES_DIR / filename)
+        if filename == "festivals.json":
+            entries = payload.get("entries") if isinstance(payload, dict) else []
+            if isinstance(entries, list):
+                rows.extend(entries)
+            continue
+        if filename == "michelin_restaurants.json":
+            entries = payload.get("restaurants") if isinstance(payload, dict) else []
+            if isinstance(entries, list):
+                rows.extend(
+                    item
+                    for item in entries
+                    if isinstance(item, dict)
+                    and str(item.get("name") or "").strip()
+                    and str(item.get("name") or "").strip() != "Reserve a table"
+                )
+            continue
+        if isinstance(payload, list):
+            rows.extend(payload)
+    return rows
+
+
 def main() -> int:
     countries = load_json(DATA_SOURCES_DIR / "countries.geojson")
     states = load_json(DATA_SOURCES_DIR / "state_regions.geojson")
     cities = load_json(DATA_SOURCES_DIR / "cities.json")
     airports = load_json(DATA_SOURCES_DIR / "airports.json")
-    sites = load_json(DATA_SOURCES_DIR / "sites.json")
+    sites = load_site_rows()
 
     iso2_to_iso3: Dict[str, str] = {}
     missing_country_fields: Counter[str] = Counter()

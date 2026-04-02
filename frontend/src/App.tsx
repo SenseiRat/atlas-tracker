@@ -10,6 +10,7 @@ type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
 type ActiveProfile = number | 'all' | null;
 type ListScope = 'all' | 'visited' | 'unvisited' | 'visited_countries';
 type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
+type MeasurementSystem = 'metric' | 'imperial';
 type Place = {
   id: string;
   name: string;
@@ -32,6 +33,17 @@ type Place = {
   continent?: string;
   country_codes?: string[] | null;
   source?: string;
+  sourceType?: string | null;
+  alternateNames?: string[];
+  countryOrCountries?: string[];
+  region?: string | null;
+  cityOrLocality?: string | null;
+  latitude?: number;
+  longitude?: number;
+  summary?: string | null;
+  tags?: string[];
+  type?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 type PlacesResponse = {
@@ -189,6 +201,7 @@ type Profile = {
   id: number;
   name: string;
   color: string;
+  home_country_code?: string | null;
   is_public: boolean;
   is_owned: boolean;
   owner_user_id?: number | null;
@@ -207,6 +220,9 @@ type AuthSession = {
     display_name?: string | null;
     role?: 'admin' | 'user';
     is_admin?: boolean;
+    theme_preference?: ThemeMode;
+    measurement_system?: MeasurementSystem;
+    default_profile_id?: number | null;
   } | null;
 };
 
@@ -240,6 +256,14 @@ type AdminProfile = Profile & {
   owner_label?: string;
 };
 
+type AdminProfileEdit = {
+  name: string;
+  owner_user_id: string;
+  color: string;
+  home_country_code: string;
+  is_public: boolean;
+};
+
 type MapFeatureCollection = {
   type: 'FeatureCollection';
   features: Array<{
@@ -247,6 +271,13 @@ type MapFeatureCollection = {
     geometry: any;
     properties: Record<string, unknown>;
   }>;
+};
+
+type SiteSourceType = 'unesco' | 'dark_sky' | 'festival' | 'michelin';
+type SiteFilterState = {
+  sourceType: string;
+  category: string;
+  country: string;
 };
 
 const emptyFeatureCollection = (): MapFeatureCollection => ({
@@ -261,6 +292,12 @@ const tabs: { type: PlaceType; label: string }[] = [
   { type: 'airport', label: 'Major Airports' },
   { type: 'site', label: 'Sites & Lists' },
 ];
+
+const defaultSiteFilterState: SiteFilterState = {
+  sourceType: 'all',
+  category: 'all',
+  country: 'all',
+};
 
 const profilePalette = [
   '#16a34a',
@@ -543,6 +580,50 @@ function createSiteIconImage(fill: string, stroke: string) {
   return ctx.getImageData(0, 0, size, size);
 }
 
+function createFestivalIconId(fill: string, stroke: string) {
+  return `festival-icon-${normalizeHexColor(fill).slice(1)}-${normalizeHexColor(stroke).slice(1)}`;
+}
+
+function createFestivalIconImage(fill: string, stroke: string) {
+  const size = 44;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not create festival icon canvas.');
+  }
+
+  const center = size / 2;
+  const outer = 12.5;
+  const inner = 6;
+  const spikes = 8;
+
+  ctx.beginPath();
+  for (let index = 0; index < spikes * 2; index += 1) {
+    const angle = (-Math.PI / 2) + (index * Math.PI) / spikes;
+    const radius = index % 2 === 0 ? outer : inner;
+    const x = center + Math.cos(angle) * radius;
+    const y = center + Math.sin(angle) * radius;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 2.2;
+  ctx.lineJoin = 'round';
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(center, center, 3.2, 0, Math.PI * 2);
+  ctx.fillStyle = stroke;
+  ctx.fill();
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
 function ensureAirportIcons(
   map: MapLibreMap,
   icons: Array<{
@@ -570,6 +651,21 @@ function ensureSiteIcons(
 
   missingIcons.forEach(({ fill, stroke }) => {
     map.addImage(createSiteIconId(fill, stroke), createSiteIconImage(fill, stroke), { pixelRatio: 2 });
+  });
+}
+
+function ensureFestivalIcons(
+  map: MapLibreMap,
+  icons: Array<{
+    fill: string;
+    stroke: string;
+  }>,
+) {
+  const missingIcons = icons.filter(({ fill, stroke }) => !map.hasImage(createFestivalIconId(fill, stroke)));
+  if (missingIcons.length === 0) return;
+
+  missingIcons.forEach(({ fill, stroke }) => {
+    map.addImage(createFestivalIconId(fill, stroke), createFestivalIconImage(fill, stroke), { pixelRatio: 2 });
   });
 }
 
@@ -638,6 +734,90 @@ const baseStyle = {
 };
 
 type ThemeMode = 'dark' | 'light';
+
+function formatDistance(valueMiles: number, measurementSystem: MeasurementSystem) {
+  if (measurementSystem === 'metric') {
+    return `${Math.round(valueMiles * 1.60934).toLocaleString()} km`;
+  }
+  return `${Math.round(valueMiles).toLocaleString()} mi`;
+}
+
+function formatElevation(valueMeters: number, measurementSystem: MeasurementSystem) {
+  if (measurementSystem === 'metric') {
+    return `${Math.round(valueMeters).toLocaleString()} m`;
+  }
+  return `${Math.round(valueMeters * 3.28084).toLocaleString()} ft`;
+}
+
+const siteSourceRegistry: Record<
+  SiteSourceType,
+  {
+    label: string;
+    badge: string;
+    markerKind: 'site' | 'festival';
+    themeColor: Record<ThemeMode, string>;
+    recurringLabel?: string;
+  }
+> = {
+  unesco: {
+    label: 'UNESCO',
+    badge: 'UNESCO',
+    markerKind: 'site',
+    themeColor: {
+      dark: '#a78bfa',
+      light: '#7c3aed',
+    },
+  },
+  dark_sky: {
+    label: 'Dark Sky',
+    badge: 'Dark Sky',
+    markerKind: 'site',
+    themeColor: {
+      dark: '#38bdf8',
+      light: '#0f766e',
+    },
+  },
+  festival: {
+    label: 'Festival',
+    badge: 'Festival',
+    markerKind: 'festival',
+    themeColor: {
+      dark: '#f59e0b',
+      light: '#c2410c',
+    },
+    recurringLabel: 'Recurring cultural event',
+  },
+  michelin: {
+    label: 'Michelin',
+    badge: 'Michelin',
+    markerKind: 'site',
+    themeColor: {
+      dark: '#fb7185',
+      light: '#be123c',
+    },
+  },
+};
+
+function normalizeSiteSourceType(value?: string | null): SiteSourceType {
+  if (value === 'dark_sky' || value === 'festival' || value === 'unesco' || value === 'michelin') return value;
+  return 'unesco';
+}
+
+function uniqueSorted(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function coerceBooleanMetadata(value: unknown) {
+  return value === true;
+}
+
+function getSiteSourceConfig(place: Place) {
+  return siteSourceRegistry[normalizeSiteSourceType(place.sourceType)];
+}
+
+function getSiteMetadataValue(place: Place, key: string) {
+  return place.metadata?.[key];
+}
 
 const mapThemeTokens: Record<
   ThemeMode,
@@ -730,6 +910,7 @@ function App() {
   const [newAdminProfileName, setNewAdminProfileName] = useState('');
   const [newAdminProfileOwnerId, setNewAdminProfileOwnerId] = useState('');
   const [newAdminProfileColor, setNewAdminProfileColor] = useState(defaultProfileColor);
+  const [newAdminProfileHomeCountryCode, setNewAdminProfileHomeCountryCode] = useState('');
   const [newAdminProfilePublic, setNewAdminProfilePublic] = useState(false);
   const [adminPasswordReset, setAdminPasswordReset] = useState<Record<number, string>>({});
   const [adminUserEdits, setAdminUserEdits] = useState<Record<number, { username: string; display_name: string }>>({});
@@ -738,6 +919,12 @@ function App() {
     const stored = localStorage.getItem('tracker-theme');
     return stored === 'light' ? 'light' : 'dark';
   });
+  const [measurementSystem, setMeasurementSystem] = useState<MeasurementSystem>(() => {
+    const stored = localStorage.getItem('tracker-measurement-system');
+    return stored === 'metric' ? 'metric' : 'imperial';
+  });
+  const [adminProfileEdits, setAdminProfileEdits] = useState<Record<number, AdminProfileEdit>>({});
+  const [isAdminMigrationSubmitting, setIsAdminMigrationSubmitting] = useState(false);
 
   const [activeTab, setActiveTab] = useState<PlaceType>('country');
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -767,13 +954,16 @@ function App() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfileColor, setNewProfileColor] = useState(defaultProfileColor);
+  const [newProfileHomeCountryCode, setNewProfileHomeCountryCode] = useState('');
   const [newProfilePublic, setNewProfilePublic] = useState(false);
   const [editProfileName, setEditProfileName] = useState('');
   const [selectedProfileColor, setSelectedProfileColor] = useState(defaultProfileColor);
+  const [selectedProfileHomeCountryCode, setSelectedProfileHomeCountryCode] = useState('');
   const [selectedProfilePublic, setSelectedProfilePublic] = useState(false);
   const [showFirstProfilePrompt, setShowFirstProfilePrompt] = useState(false);
   const [accountUsername, setAccountUsername] = useState('');
   const [accountDisplayName, setAccountDisplayName] = useState('');
+  const [accountDefaultProfileId, setAccountDefaultProfileId] = useState<string>('');
   const [accountPassword, setAccountPassword] = useState('');
   const [accountConfirmPassword, setAccountConfirmPassword] = useState('');
   const [search, setSearch] = useState<Record<PlaceType, string>>({
@@ -791,7 +981,7 @@ function App() {
     airport: 'all',
     site: 'all',
   });
-  const [siteCategoryFilter, setSiteCategoryFilter] = useState('all');
+  const [siteFilters, setSiteFilters] = useState<SiteFilterState>(defaultSiteFilterState);
   const [selectedVisitedCountries, setSelectedVisitedCountries] = useState<Record<'state' | 'city', string[]>>({
     state: [],
     city: [],
@@ -822,12 +1012,14 @@ function App() {
   useEffect(() => {
     if (typeof profileId !== 'number') {
       setSelectedProfileColor(defaultProfileColor);
+      setSelectedProfileHomeCountryCode('');
       setSelectedProfilePublic(false);
       return;
     }
     const active = profiles.find((profile) => profile.id === profileId);
     setEditProfileName(active?.name ?? '');
     setSelectedProfileColor(normalizeHexColor(active?.color));
+    setSelectedProfileHomeCountryCode((active?.home_country_code ?? '').toUpperCase());
     setSelectedProfilePublic(Boolean(active?.is_public));
   }, [profiles, profileId]);
 
@@ -845,11 +1037,38 @@ function App() {
   }, [adminUsers]);
 
   useEffect(() => {
+    const nextProfiles = Object.fromEntries(
+      adminProfiles.map((profile) => [
+        profile.id,
+        {
+          name: profile.name,
+          owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+          color: normalizeHexColor(profile.color),
+          home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+          is_public: Boolean(profile.is_public),
+        },
+      ]),
+    );
+    setAdminProfileEdits(nextProfiles);
+  }, [adminProfiles]);
+
+  useEffect(() => {
     setAccountUsername(authSession?.user?.username ?? '');
     setAccountDisplayName(authSession?.user?.display_name ?? '');
+    setAccountDefaultProfileId(authSession?.user?.default_profile_id ? String(authSession.user.default_profile_id) : '');
     setAccountPassword('');
     setAccountConfirmPassword('');
-  }, [authSession?.user?.id, authSession?.user?.username, authSession?.user?.display_name]);
+  }, [authSession?.user?.id, authSession?.user?.username, authSession?.user?.display_name, authSession?.user?.default_profile_id]);
+
+  useEffect(() => {
+    if (!authSession?.authenticated || !authSession.user) return;
+    if (authSession.user.theme_preference === 'light' || authSession.user.theme_preference === 'dark') {
+      setThemeMode(authSession.user.theme_preference);
+    }
+    if (authSession.user.measurement_system === 'metric' || authSession.user.measurement_system === 'imperial') {
+      setMeasurementSystem(authSession.user.measurement_system);
+    }
+  }, [authSession?.authenticated, authSession?.user?.id, authSession?.user?.theme_preference, authSession?.user?.measurement_system]);
 
   useEffect(() => {
     if (!showSettingsOverlay) return;
@@ -880,6 +1099,23 @@ function App() {
       if (type === 'airport') {
         return `${place.name} ${place.airport_code ?? ''} ${place.search_location ?? ''}`.toLowerCase();
       }
+      if (type === 'site') {
+        return [
+          place.name,
+          ...(place.alternateNames ?? []),
+          place.cityOrLocality,
+          ...(place.countryOrCountries ?? []),
+          ...(place.tags ?? []),
+          place.summary,
+          place.region,
+          place.type,
+          place.category,
+          place.sourceType,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+      }
       return place.name.toLowerCase();
     };
 
@@ -903,13 +1139,22 @@ function App() {
   }, [sortedPlaces.airport]);
 
   const siteCategories = useMemo(() => {
-    const categories = new Set(
-      places.site
-        .map((site) => (site.category || '').trim().toLowerCase())
-        .filter((category) => Boolean(category)),
-    );
-    return ['all', ...Array.from(categories).sort()];
-  }, [places.site]);
+    const selectedSource = siteFilters.sourceType;
+    return [
+      'all',
+      ...uniqueSorted(
+        places.site
+          .filter((site) => selectedSource === 'all' || normalizeSiteSourceType(site.sourceType) === selectedSource)
+          .map((site) => site.type || site.category)
+          .map((value) => value?.toLowerCase()),
+      ),
+    ];
+  }, [places.site, siteFilters.sourceType]);
+
+  const siteCountries = useMemo(
+    () => ['all', ...uniqueSorted(places.site.flatMap((site) => site.countryOrCountries ?? []))],
+    [places.site],
+  );
 
   const airportLabelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1082,6 +1327,10 @@ function App() {
     () => new Map([...places.city, ...places.airport, ...places.site].map((place) => [place.id, place] as const)),
     [places.city, places.airport, places.site],
   );
+  const selectedMapPlace = useMemo(
+    () => (selectedMapPlaceId ? pointLookup.get(selectedMapPlaceId) ?? null : null),
+    [pointLookup, selectedMapPlaceId],
+  );
   const stateVisitById = useMemo(
     () => new Map(activeVisits.filter((visit) => visit.place_id.startsWith('state-')).map((visit) => [visit.place_id, visit] as const)),
     [activeVisits],
@@ -1092,8 +1341,10 @@ function App() {
         places,
         visits: activeVisits,
         tripLogs: activeTrips,
+        measurementSystem,
+        homeCountryCode: selectedProfile?.home_country_code ?? undefined,
       }),
-    [activeTrips, activeVisits, places],
+    [activeTrips, activeVisits, measurementSystem, places, selectedProfile?.home_country_code],
   );
   const achievementModel = useMemo(
     () =>
@@ -1108,6 +1359,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('tracker-theme', themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    localStorage.setItem('tracker-measurement-system', measurementSystem);
+  }, [measurementSystem]);
 
   useEffect(() => {
     if (showFirstProfilePrompt) {
@@ -1162,7 +1417,11 @@ function App() {
     setProfiles(data);
     const ownedProfiles = data.filter((profile) => profile.is_owned);
     const publicProfiles = data.filter((profile) => !profile.is_owned && profile.is_public);
-    const preferred = authSession?.authenticated ? ownedProfiles[0] ?? publicProfiles[0] : publicProfiles[0];
+    const preferredFromAccount =
+      typeof authSession?.user?.default_profile_id === 'number'
+        ? data.find((profile) => profile.id === authSession.user.default_profile_id) ?? null
+        : null;
+    const preferred = preferredFromAccount ?? (authSession?.authenticated ? ownedProfiles[0] ?? publicProfiles[0] : publicProfiles[0]);
 
     const hasCurrentSelection =
       profileId === null ||
@@ -1467,6 +1726,16 @@ function App() {
           },
         });
 
+        const selectFeatureFromLayer = (event: maplibregl.MapLayerMouseEvent) => {
+          const featureId = event.features?.[0]?.id;
+          if (typeof featureId === 'string') {
+            setSelectedMapPlaceId(featureId);
+          }
+        };
+        map.on('click', 'airport-points', selectFeatureFromLayer);
+        map.on('click', 'site-points', selectFeatureFromLayer);
+        map.on('click', 'points', selectFeatureFromLayer);
+
         setIsMapReady(true);
         window.setTimeout(() => map.resize(), 0);
       } catch (error) {
@@ -1598,8 +1867,15 @@ function App() {
                 ? profileVisualsById.get(profileId) ?? defaultVisuals
                 : defaultVisuals;
           const pointType = place.id.startsWith('city-') ? 'city' : place.id.startsWith('airport-') ? 'airport' : 'site';
-          const markerColor = pointType === 'city' ? visuals.city : pointType === 'airport' ? visuals.airport : visuals.site;
+          const sourceConfig = pointType === 'site' ? getSiteSourceConfig(place) : null;
+          const markerColor =
+            pointType === 'city'
+              ? visuals.city
+              : pointType === 'airport'
+                ? visuals.airport
+                : mixHexColors(visuals.site, sourceConfig?.themeColor[themeMode] ?? visuals.site, 0.55);
           const markerStroke = contrastingColor(markerColor);
+          const markerKind = sourceConfig?.markerKind ?? 'site';
 
           return {
             type: 'Feature',
@@ -1610,11 +1886,14 @@ function App() {
               point_type: pointType,
               marker_color: markerColor,
               marker_stroke: markerStroke,
+              marker_kind: markerKind,
               icon_id:
                 pointType === 'airport'
                   ? createAirportIconId(markerColor, markerStroke)
                   : pointType === 'site'
-                    ? createSiteIconId(markerColor, markerStroke)
+                    ? markerKind === 'festival'
+                      ? createFestivalIconId(markerColor, markerStroke)
+                      : createSiteIconId(markerColor, markerStroke)
                     : null,
             },
           };
@@ -1637,12 +1916,27 @@ function App() {
             properties: { point_type: string; marker_color: string; marker_stroke: string };
           } => Boolean(feature) && (feature as any).properties?.point_type === 'site',
         )
+        .filter((feature) => (feature as any).properties?.marker_kind !== 'festival')
+        .map((feature) => ({
+          fill: String((feature as any).properties.marker_color),
+          stroke: String((feature as any).properties.marker_stroke),
+        }));
+      const festivalIcons = pointFeatures
+        .filter(
+          (feature): feature is (typeof pointFeatures)[number] & {
+            properties: { point_type: string; marker_color: string; marker_stroke: string };
+          } =>
+            Boolean(feature) &&
+            (feature as any).properties?.point_type === 'site' &&
+            (feature as any).properties?.marker_kind === 'festival',
+        )
         .map((feature) => ({
           fill: String((feature as any).properties.marker_color),
           stroke: String((feature as any).properties.marker_stroke),
         }));
       ensureAirportIcons(map, airportIcons);
       ensureSiteIcons(map, siteIcons);
+      ensureFestivalIcons(map, festivalIcons);
       pointSource.setData({ type: 'FeatureCollection', features: pointFeatures } as any);
 
       const stateMarkerColorById = new Map<string, string>();
@@ -1720,7 +2014,7 @@ function App() {
       console.error('Failed to update map sources for the active profile.', error);
       setUiError((current) => current ?? 'Some profile data could not be drawn on the map.');
     }
-  }, [activeTrips, activeVisits, defaultVisuals, isMapReady, isMultiProfileView, pointLookup, profileId, profileVisualsById]);
+  }, [activeTrips, activeVisits, defaultVisuals, getSiteSourceConfig, isMapReady, isMultiProfileView, pointLookup, profileId, profileVisualsById, themeMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1779,11 +2073,16 @@ function App() {
     }
 
     const filtered = scopedPlaces
-      .filter((place) =>
-        activeTab === 'site' && siteCategoryFilter !== 'all'
-          ? (place.category || '').toLowerCase() === siteCategoryFilter
-          : true,
-      )
+      .filter((place) => {
+        if (activeTab !== 'site') return true;
+        const sourceType = normalizeSiteSourceType(place.sourceType);
+        const sourceCountrySet = new Set((place.countryOrCountries ?? []).map((value) => value.toLowerCase()));
+        return (
+          (siteFilters.sourceType === 'all' || sourceType === siteFilters.sourceType) &&
+          (siteFilters.category === 'all' || (place.type || place.category || '').trim().toLowerCase() === siteFilters.category) &&
+          (siteFilters.country === 'all' || sourceCountrySet.has(siteFilters.country))
+        );
+      })
       .filter((place) => {
         if (activeTab === 'airport') {
           if (selectedAirportSearchId) {
@@ -1811,7 +2110,7 @@ function App() {
     selectedVisitedCountries,
     selectedAirportSearchId,
     visitedCountryCodes,
-    siteCategoryFilter,
+    siteFilters,
     sortedPlaces,
     visitedIds,
   ]);
@@ -1834,6 +2133,7 @@ function App() {
     setNewProfileName('');
     setNewProfilePublic(false);
     setNewProfileColor(nextSuggestedProfileColor);
+    setNewProfileHomeCountryCode('');
     setShowCreateProfileModal(true);
   };
 
@@ -1873,7 +2173,7 @@ function App() {
       if (feature && fitMapToFeature(map, feature, 60)) return;
     }
 
-    setSelectedMapPlaceId(null);
+    setSelectedMapPlaceId(place.id);
     if (place.lat !== undefined && place.lon !== undefined) {
       map.flyTo({ center: [place.lon, place.lat], zoom: 5, duration: 800 });
     }
@@ -1892,12 +2192,14 @@ function App() {
         body: JSON.stringify({
           name: candidate,
           color: normalizeHexColor(newProfileColor),
+          home_country_code: newProfileHomeCountryCode || null,
           is_public: Boolean(newProfilePublic),
         }),
       });
 
       setNewProfileName('');
       setNewProfileColor(nextSuggestedProfileColor);
+      setNewProfileHomeCountryCode('');
       setNewProfilePublic(false);
       setShowCreateProfileModal(false);
       await refreshProfiles();
@@ -1933,6 +2235,7 @@ function App() {
         body: JSON.stringify({
           name: currentName,
           color: normalizeHexColor(selectedProfileColor),
+          home_country_code: selectedProfileHomeCountryCode || null,
           is_public: selectedProfilePublic,
         }),
       });
@@ -2112,40 +2415,32 @@ function App() {
         name: newAdminProfileName.trim(),
         owner_user_id: Number(newAdminProfileOwnerId),
         color: normalizeHexColor(newAdminProfileColor),
+        home_country_code: newAdminProfileHomeCountryCode || null,
         is_public: newAdminProfilePublic,
       }),
     });
     setNewAdminProfileName('');
     setNewAdminProfileOwnerId('');
     setNewAdminProfileColor(nextSuggestedProfileColor);
+    setNewAdminProfileHomeCountryCode('');
     setNewAdminProfilePublic(false);
     await refreshAdminData();
     await refreshProfiles();
   };
 
-  const handleAdminEditProfile = async (serverProfile: AdminProfile) => {
-    const nextName = window.prompt('Profile name', serverProfile.name);
-    if (!nextName || !nextName.trim()) return;
-    const nextOwner = window.prompt('Owner user id (leave blank for none)', String(serverProfile.owner_user_id ?? ''));
-    const ownerUserId = nextOwner?.trim() ? Number(nextOwner.trim()) : null;
-    if (ownerUserId !== null && Number.isNaN(ownerUserId)) return;
-    await api(`/api/admin/profiles/${serverProfile.id}`, {
+  const handleAdminSaveProfile = async (profileIdToSave: number) => {
+    const draft = adminProfileEdits[profileIdToSave];
+    if (!draft || !draft.name.trim()) return;
+    await api(`/api/admin/profiles/${profileIdToSave}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: nextName.trim(),
-        owner_user_id: ownerUserId,
+        name: draft.name.trim(),
+        color: draft.color,
+        home_country_code: draft.home_country_code || null,
+        is_public: draft.is_public,
+        owner_user_id: draft.owner_user_id ? Number(draft.owner_user_id) : null,
       }),
-    });
-    await refreshAdminData();
-    await refreshProfiles();
-  };
-
-  const handleAdminToggleProfilePublic = async (serverProfile: AdminProfile) => {
-    await api(`/api/admin/profiles/${serverProfile.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_public: !serverProfile.is_public }),
     });
     await refreshAdminData();
     await refreshProfiles();
@@ -2159,6 +2454,35 @@ function App() {
       body: JSON.stringify(adminSettings),
     });
     setAdminSettings(updated);
+  };
+
+  const handleAdminMigrateDatabase = async () => {
+    if (!adminSettings || isAdminMigrationSubmitting) return;
+    if (!window.confirm(`Migrate all application data into ${adminSettings.preferred_db_backend}? This overwrites data in the target database.`)) {
+      return;
+    }
+    setUiError(null);
+    setIsAdminMigrationSubmitting(true);
+    try {
+      const updated = await api<AppSettings & { migration_summary?: Record<string, number | string> }>('/api/admin/settings/migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adminSettings),
+      });
+      setAdminSettings(updated);
+      await refreshAuthSession();
+      const summary = updated.migration_summary;
+      if (summary) {
+        window.alert(
+          `Migration complete to ${summary.target_backend}. Copied ${summary.users} users, ${summary.profiles} profiles, ${summary.visits} visits, and ${summary.trip_logs} trip logs. Restart the server to switch backends.`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not migrate database.';
+      setUiError(message);
+    } finally {
+      setIsAdminMigrationSubmitting(false);
+    }
   };
 
   const handleAccountSave = async () => {
@@ -2175,6 +2499,9 @@ function App() {
 
     const payload: Record<string, string> = {
       display_name: displayName,
+      theme_preference: themeMode,
+      measurement_system: measurementSystem,
+      default_profile_id: accountDefaultProfileId,
     };
     if (!authSession.oidc_enabled) {
       payload.username = accountUsername.trim().toLowerCase();
@@ -2194,6 +2521,10 @@ function App() {
       setAccountPassword('');
       setAccountConfirmPassword('');
       await refreshAuthSession();
+      if (accountDefaultProfileId) {
+        setProfileId(Number(accountDefaultProfileId));
+      }
+      await refreshProfiles();
       if (isAdmin) {
         await refreshAdminData();
       }
@@ -2226,9 +2557,16 @@ function App() {
     return place.name;
   };
 
+  const formatLeaderboardValue = (categoryId: string, value?: number) => {
+    if (value === undefined || value === null) return '--';
+    if (categoryId === 'miles') return formatDistance(value, measurementSystem);
+    return Math.round(value).toLocaleString();
+  };
+
   const formatSiteCategoryLabel = (category?: string) =>
     category
       ? category
+          .replaceAll('/', ' / ')
           .split('_')
           .filter(Boolean)
           .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -2273,20 +2611,140 @@ function App() {
       subtitle = [place.municipality, regionLabel, countryName].filter(Boolean).join(', ') || place.location || '';
       if (place.airport_code) badges.push(place.airport_code);
     } else if (type === 'site') {
+      const sourceConfig = getSiteSourceConfig(place);
       title = place.name;
-      subtitle = countryName || '';
-      const categoryLabel = formatSiteCategoryLabel(place.category);
+      subtitle = [place.cityOrLocality, ...(place.countryOrCountries ?? [])].filter(Boolean).join(', ') || countryName || '';
+      badges.push(sourceConfig.badge);
+      const categoryLabel = formatSiteCategoryLabel(place.type || place.category || '');
       if (categoryLabel) badges.push(categoryLabel);
+      if (place.sourceType === 'festival' && coerceBooleanMetadata(getSiteMetadataValue(place, 'heritage_recognized'))) {
+        badges.push('Heritage-recognized');
+      }
     }
 
     return { title, subtitle, badges };
   };
 
-  const formatLeaderboardValue = (categoryId: string, value: number | undefined) => {
-    if (value === undefined) return '--';
-    if (categoryId === 'miles') return `${Math.round(value).toLocaleString()} mi`;
-    if (categoryId === 'overall_score') return Math.round(value).toLocaleString();
-    return Math.round(value).toLocaleString();
+  const updateSiteSourceFilter = (sourceType: string) => {
+    setSiteFilters((prev) => ({
+      ...prev,
+      sourceType,
+      category: 'all',
+    }));
+  };
+
+  const renderSiteDetailPanel = (place: Place) => {
+    const sourceConfig = getSiteSourceConfig(place);
+    const countries = place.countryOrCountries ?? [];
+    const alternateNames = place.alternateNames ?? [];
+    const tags = place.tags ?? [];
+    const detailRows =
+      place.sourceType === 'festival'
+        ? [
+            { label: 'Festival type', value: place.type },
+            { label: 'Tradition', value: String(getSiteMetadataValue(place, 'tradition') ?? '').trim() || null },
+            { label: 'Recurrence', value: String(getSiteMetadataValue(place, 'recurrence') ?? '').trim() || null },
+            { label: 'Date notes', value: String(getSiteMetadataValue(place, 'date_notes') ?? '').trim() || null },
+            {
+              label: 'Globally famous',
+              value: coerceBooleanMetadata(getSiteMetadataValue(place, 'globally_famous')) ? 'Yes' : 'No',
+            },
+            {
+              label: 'Culturally significant',
+              value: coerceBooleanMetadata(getSiteMetadataValue(place, 'culturally_significant')) ? 'Yes' : 'No',
+            },
+            {
+              label: 'Heritage recognized',
+              value: coerceBooleanMetadata(getSiteMetadataValue(place, 'heritage_recognized')) ? 'Yes' : 'No',
+            },
+          ]
+        : place.sourceType === 'michelin'
+          ? [
+              { label: 'Distinction', value: String(getSiteMetadataValue(place, 'distinction') ?? '').trim() || place.type || null },
+              { label: 'Cuisine', value: String(getSiteMetadataValue(place, 'cuisine') ?? '').trim() || null },
+              { label: 'Price', value: String(getSiteMetadataValue(place, 'price') ?? '').trim() || null },
+              { label: 'Guide link', value: String(getSiteMetadataValue(place, 'link') ?? '').trim() || null },
+            ]
+        : [
+            { label: 'Type', value: place.type || formatSiteCategoryLabel(place.category || '') || null },
+            { label: 'Region', value: place.region },
+          ];
+
+    return (
+      <div className="detail-panel detail-panel--place">
+        <div className="panel-header">
+          <div>
+            <h3>{place.name}</h3>
+            <p>
+              {sourceConfig.badge}
+              {sourceConfig.recurringLabel ? ` · ${sourceConfig.recurringLabel}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={() => setSelectedMapPlaceId(null)}>
+            Close
+          </button>
+        </div>
+
+        <div className="place-detail-card">
+          <div className="place-detail-card__badges">
+            <span className="place-detail-chip">{sourceConfig.badge}</span>
+            {place.type && <span className="place-detail-chip">{formatSiteCategoryLabel(place.type)}</span>}
+            {place.sourceType === 'festival' &&
+              coerceBooleanMetadata(getSiteMetadataValue(place, 'heritage_recognized')) && (
+                <span className="place-detail-chip">Heritage-recognized</span>
+              )}
+          </div>
+
+          {alternateNames.length > 0 && (
+            <p className="place-detail-meta">
+              <strong>Alternate names:</strong> {alternateNames.join(', ')}
+            </p>
+          )}
+          {place.cityOrLocality && (
+            <p className="place-detail-meta">
+              <strong>Locality:</strong> {place.cityOrLocality}
+            </p>
+          )}
+          {countries.length > 0 && (
+            <p className="place-detail-meta">
+              <strong>Country / countries:</strong> {countries.join(', ')}
+            </p>
+          )}
+          {place.region && (
+            <p className="place-detail-meta">
+              <strong>Region:</strong> {place.region}
+            </p>
+          )}
+          {place.summary && <p className="place-detail-summary">{place.summary}</p>}
+          {place.sourceType === 'festival' && (
+            <p className="place-detail-note">
+              Festival coordinates mark an anchor location for a recurring cultural event, not a permanent site boundary.
+            </p>
+          )}
+
+          <div className="place-detail-grid">
+            {detailRows
+              .filter((row) => row.value)
+              .map((row) => (
+                <div key={row.label} className="place-detail-grid__item">
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+          </div>
+
+          {tags.length > 0 && (
+            <div className="place-detail-tags">
+              {tags.map((tag) => (
+                <span key={`${place.id}-${tag}`} className="place-detail-chip">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const handleLogout = async () => {
@@ -2364,7 +2822,7 @@ function App() {
         <summary>
           <div>
             <strong>Authentication</strong>
-            <span>Sign in, review auth mode, and configure OIDC or backend settings.</span>
+            <span>Password and sign-in controls.</span>
           </div>
         </summary>
         <div className="settings-section__content trip-form">
@@ -2380,7 +2838,6 @@ function App() {
             <strong>Mode</strong>
             <span>{authSession?.oidc_enabled ? 'OIDC' : 'Local username and password'}</span>
           </div>
-
           {!authSession?.authenticated && authSession?.has_local_users && !authSession?.oidc_enabled && (
             <button
               type="button"
@@ -2393,96 +2850,150 @@ function App() {
               Open login
             </button>
           )}
-
           {!authSession?.authenticated && authSession?.oidc_enabled && (
-            <button
-              type="button"
-              className="accent-button"
-              onClick={() => {
-                window.location.href = '/api/auth/login';
-              }}
-            >
+            <button type="button" className="accent-button" onClick={() => (window.location.href = '/api/auth/login')}>
               Sign in with OIDC
             </button>
           )}
-
-          {authSession?.authenticated && (
-            <button type="button" onClick={handleLogout}>
-              Log out
-            </button>
+          {authSession?.authenticated ? (
+            <>
+              {!authSession.oidc_enabled && (
+                <div className="settings-subsection">
+                  <h3>Password</h3>
+                  <label>
+                    New password
+                    <input type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
+                  </label>
+                  <label>
+                    Confirm password
+                    <input
+                      type="password"
+                      value={accountConfirmPassword}
+                      onChange={(event) => setAccountConfirmPassword(event.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+              <div className="settings-actions">
+                <button type="button" className="accent-button" onClick={handleAccountSave} disabled={isAuthSubmitting}>
+                  {isAuthSubmitting ? 'Saving...' : 'Save authentication settings'}
+                </button>
+                <button type="button" onClick={handleLogout}>
+                  Log out
+                </button>
+              </div>
+            </>
+          ) : (
+            <p>Sign in to manage your password.</p>
           )}
+        </div>
+      </details>
 
-          {isAdmin && adminSettings && (
+      <details className="settings-section" open>
+        <summary>
+          <div>
+            <strong>Profile</strong>
+            <span>Theme, display name, default map profile, and measurement preference.</span>
+          </div>
+        </summary>
+        <div className="settings-section__content trip-form">
+          {authSession?.authenticated ? (
             <>
               <div className="settings-subsection">
-                <h3>OIDC configuration</h3>
+                <h3>Appearance</h3>
                 <label>
-                  Mode
-                  <select
-                    value={adminSettings.auth_mode}
-                    onChange={(event) =>
-                      setAdminSettings((prev) => (prev ? { ...prev, auth_mode: event.target.value } : prev))
-                    }
-                  >
-                    <option value="local">Username / password</option>
-                    <option value="oidc">OIDC</option>
+                  Theme
+                  <select value={themeMode} onChange={(event) => setThemeMode(event.target.value as ThemeMode)}>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
                   </select>
                 </label>
                 <label>
-                  OIDC issuer
-                  <input
-                    value={adminSettings.oidc_issuer ?? ''}
-                    onChange={(event) =>
-                      setAdminSettings((prev) => (prev ? { ...prev, oidc_issuer: event.target.value } : prev))
-                    }
-                  />
-                </label>
-                <label>
-                  OIDC client id
-                  <input
-                    value={adminSettings.oidc_client_id ?? ''}
-                    onChange={(event) =>
-                      setAdminSettings((prev) => (prev ? { ...prev, oidc_client_id: event.target.value } : prev))
-                    }
-                  />
-                </label>
-                <label>
-                  OIDC client secret
-                  <input
-                    type="password"
-                    value={adminSettings.oidc_client_secret ?? ''}
-                    onChange={(event) =>
-                      setAdminSettings((prev) => (prev ? { ...prev, oidc_client_secret: event.target.value } : prev))
-                    }
-                  />
+                  Measurements
+                  <select
+                    value={measurementSystem}
+                    onChange={(event) => setMeasurementSystem(event.target.value as MeasurementSystem)}
+                  >
+                    <option value="imperial">Imperial</option>
+                    <option value="metric">Metric</option>
+                  </select>
                 </label>
               </div>
-
               <div className="settings-subsection">
-                <h3>Server backend</h3>
+                <h3>Account</h3>
                 <label>
-                  Backend
-                  <select
-                    value={adminSettings.preferred_db_backend}
-                    onChange={(event) =>
-                      setAdminSettings((prev) =>
-                        prev ? { ...prev, preferred_db_backend: event.target.value as 'sqlite' | 'postgres' } : prev,
-                      )
-                    }
-                  >
-                    <option value="sqlite">SQLite</option>
-                    <option value="postgres">Postgres</option>
+                  Display name
+                  <input value={accountDisplayName} onChange={(event) => setAccountDisplayName(event.target.value)} />
+                </label>
+                <label>
+                  Default map profile
+                  <select value={accountDefaultProfileId} onChange={(event) => setAccountDefaultProfileId(event.target.value)}>
+                    <option value="">No default</option>
+                    {ownedProfiles.map((profile) => (
+                      <option key={`default-owned-${profile.id}`} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                    {publicProfiles.map((profile) => (
+                      <option key={`default-public-${profile.id}`} value={profile.id}>
+                        {profile.name} (Public)
+                      </option>
+                    ))}
                   </select>
                 </label>
-                <label>
-                  SQLite path
-                  <input
-                    value={adminSettings.sqlite_db_path ?? ''}
-                    onChange={(event) =>
-                      setAdminSettings((prev) => (prev ? { ...prev, sqlite_db_path: event.target.value } : prev))
-                    }
-                  />
-                </label>
+              </div>
+              <button type="button" className="accent-button" onClick={handleAccountSave} disabled={isAuthSubmitting}>
+                {isAuthSubmitting ? 'Saving...' : 'Save profile settings'}
+              </button>
+            </>
+          ) : (
+            <p>Sign in to manage your profile settings.</p>
+          )}
+        </div>
+      </details>
+
+      {isAdmin && adminSettings && (
+        <details className="settings-section">
+          <summary>
+            <div>
+              <strong>Server Backend</strong>
+              <span>Choose SQLite or Postgres and migrate data between them.</span>
+            </div>
+          </summary>
+          <div className="settings-section__content trip-form">
+            <div className="settings-subsection">
+              <h3>Backend target</h3>
+              <label>
+                Backend
+                <select
+                  value={adminSettings.preferred_db_backend}
+                  onChange={(event) =>
+                    setAdminSettings((prev) =>
+                      prev ? { ...prev, preferred_db_backend: event.target.value as 'sqlite' | 'postgres' } : prev,
+                    )
+                  }
+                >
+                  <option value="sqlite">SQLite</option>
+                  <option value="postgres">Postgres</option>
+                </select>
+              </label>
+              <div className="settings-note">
+                <strong>Current backend</strong>
+                <span>{adminSettings.configured_db_backend}</span>
+              </div>
+            </div>
+            <div className="settings-subsection">
+              <h3>Connection settings</h3>
+              <label>
+                SQLite path
+                <input
+                  value={adminSettings.sqlite_db_path ?? ''}
+                  onChange={(event) =>
+                    setAdminSettings((prev) => (prev ? { ...prev, sqlite_db_path: event.target.value } : prev))
+                  }
+                />
+              </label>
+              <div className="settings-grid">
                 <label>
                   DB host
                   <input
@@ -2519,383 +3030,93 @@ function App() {
                     onChange={(event) => setAdminSettings((prev) => (prev ? { ...prev, db_password: event.target.value } : prev))}
                   />
                 </label>
-                <small>
-                  Current backend: {adminSettings.configured_db_backend}. Saving these values marks restart required.
-                </small>
               </div>
-
-              <button type="button" className="accent-button" onClick={handleAdminSaveSettings}>
-                Save authentication and backend settings
-              </button>
-            </>
-          )}
-        </div>
-      </details>
-
-      <details className="settings-section">
-        <summary>
-          <div>
-            <strong>Users</strong>
-            <span>Create users, rename them, update roles, and reset passwords.</span>
-          </div>
-        </summary>
-        <div className="settings-section__content trip-form">
-          {isAdmin ? (
-            <>
-              <div className="settings-subsection">
-                <h3>Add user</h3>
-                <label>
-                  Username
-                  <input value={newAdminUserUsername} onChange={(event) => setNewAdminUserUsername(event.target.value)} />
-                </label>
-                <label>
-                  Display name
-                  <input value={newAdminUserDisplayName} onChange={(event) => setNewAdminUserDisplayName(event.target.value)} />
-                </label>
-                <label>
-                  Password
-                  <input type="password" value={newAdminUserPassword} onChange={(event) => setNewAdminUserPassword(event.target.value)} />
-                </label>
-                <label className="toggle">
-                  <input type="checkbox" checked={newAdminUserIsAdmin} onChange={(event) => setNewAdminUserIsAdmin(event.target.checked)} />
-                  Create as admin
-                </label>
-                <button type="button" className="accent-button" onClick={handleAdminCreateUser}>
-                  Add user
-                </button>
-              </div>
-
-              <ul className="trip-list">
-                {adminUsers.map((user) => (
-                  <li key={user.id} className="trip-card admin-card">
-                    <div className="trip-main">
-                      <strong>{user.display_name || user.username || `User ${user.id}`}</strong>
-                      <span>@{user.username || 'n/a'} · {user.role}</span>
-                    </div>
-                    <div className="admin-actions">
-                      <label>
-                        Username
-                        <input
-                          value={adminUserEdits[user.id]?.username ?? ''}
-                          onChange={(event) =>
-                            setAdminUserEdits((prev) => ({
-                              ...prev,
-                              [user.id]: {
-                                username: event.target.value,
-                                display_name: prev[user.id]?.display_name ?? user.display_name ?? '',
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Display name
-                        <input
-                          value={adminUserEdits[user.id]?.display_name ?? ''}
-                          onChange={(event) =>
-                            setAdminUserEdits((prev) => ({
-                              ...prev,
-                              [user.id]: {
-                                username: prev[user.id]?.username ?? user.username ?? '',
-                                display_name: event.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <button type="button" onClick={() => handleAdminSaveUser(user.id)}>
-                        Save details
-                      </button>
-                      <button type="button" onClick={() => handleAdminUserRole(user.id, user.is_admin ? 'user' : 'admin')}>
-                        {user.is_admin ? 'Demote' : 'Promote'}
-                      </button>
-                      <input
-                        type="password"
-                        placeholder="New password"
-                        value={adminPasswordReset[user.id] ?? ''}
-                        onChange={(event) => setAdminPasswordReset((prev) => ({ ...prev, [user.id]: event.target.value }))}
-                      />
-                      <button type="button" onClick={() => handleAdminResetPassword(user.id)}>
-                        Reset password
-                      </button>
-                      <button type="button" onClick={() => handleAdminDeleteUser(user.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p>Only administrators can manage users.</p>
-          )}
-        </div>
-      </details>
-
-      <details className="settings-section">
-        <summary>
-          <div>
-            <strong>List Settings</strong>
-            <span>Manage list scopes, category filters, and visited-country filters.</span>
-          </div>
-        </summary>
-        <div className="settings-section__content trip-form">
-          <div className="settings-grid">
-            {tabs.map((tab) => (
-              <label key={`scope-${tab.type}`}>
-                {tab.label} scope
-                <select
-                  value={listScope[tab.type]}
-                  onChange={(event) =>
-                    setListScope((prev) => ({
-                      ...prev,
-                      [tab.type]: event.target.value as ListScope,
-                    }))
-                  }
-                >
-                  {getScopeOptions(tab.type).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-
-            <label>
-              Site category
-              <select value={siteCategoryFilter} onChange={(event) => setSiteCategoryFilter(event.target.value)}>
-                {siteCategories.map((category) => (
-                  <option key={category} value={category}>
-                    {category === 'all' ? 'All categories' : category.replaceAll('_', ' ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {visitedCountryScopeOptions.length > 0 && (
-            <>
-              <div className="visited-country-filter">
-                <div className="visited-country-filter__header">
-                  <span>State list country filter</span>
-                  {selectedVisitedCountries.state.length > 0 && (
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() =>
-                        setSelectedVisitedCountries((prev) => ({
-                          ...prev,
-                          state: [],
-                        }))
-                      }
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="visited-country-filter__list">
-                  {visitedCountryScopeOptions.map((country) => (
-                    <label key={`state-${country.code}`} className="visited-country-option">
-                      <input
-                        type="checkbox"
-                        checked={selectedVisitedCountries.state.includes(country.code)}
-                        onChange={() => onToggleVisitedCountrySelection('state', country.code)}
-                      />
-                      <span>{country.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="visited-country-filter">
-                <div className="visited-country-filter__header">
-                  <span>City list country filter</span>
-                  {selectedVisitedCountries.city.length > 0 && (
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() =>
-                        setSelectedVisitedCountries((prev) => ({
-                          ...prev,
-                          city: [],
-                        }))
-                      }
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="visited-country-filter__list">
-                  {visitedCountryScopeOptions.map((country) => (
-                    <label key={`city-${country.code}`} className="visited-country-option">
-                      <input
-                        type="checkbox"
-                        checked={selectedVisitedCountries.city.includes(country.code)}
-                        onChange={() => onToggleVisitedCountrySelection('city', country.code)}
-                      />
-                      <span>{country.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </details>
-
-      <details className="settings-section">
-        <summary>
-          <div>
-            <strong>Profile</strong>
-            <span>Update your account details, display name, password, and appearance.</span>
-          </div>
-        </summary>
-        <div className="settings-section__content trip-form">
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={themeMode === 'light'}
-              onChange={(event) => setThemeMode(event.target.checked ? 'light' : 'dark')}
-            />
-            Use light theme
-          </label>
-
-          {authSession?.authenticated ? (
-            <>
-              {!authSession.oidc_enabled && (
-                <label>
-                  Username
-                  <input value={accountUsername} onChange={(event) => setAccountUsername(event.target.value)} />
-                </label>
-              )}
-              <label>
-                Display name
-                <input value={accountDisplayName} onChange={(event) => setAccountDisplayName(event.target.value)} />
-              </label>
-              {!authSession.oidc_enabled && (
-                <>
-                  <label>
-                    New password
-                    <input type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
-                  </label>
-                  <label>
-                    Confirm password
-                    <input
-                      type="password"
-                      value={accountConfirmPassword}
-                      onChange={(event) => setAccountConfirmPassword(event.target.value)}
-                    />
-                  </label>
-                </>
-              )}
-              <button type="button" className="accent-button" onClick={handleAccountSave} disabled={isAuthSubmitting}>
-                {isAuthSubmitting ? 'Saving...' : 'Save profile settings'}
-              </button>
-            </>
-          ) : (
-            <p>Sign in to update your account profile and password.</p>
-          )}
-        </div>
-      </details>
-
-      <details className="settings-section">
-        <summary>
-          <div>
-            <strong>Map Profiles</strong>
-            <span>Choose the active map profile, manage your own profiles, and administer global profiles.</span>
-          </div>
-        </summary>
-        <div className="settings-section__content trip-form">
-          <div className="settings-subsection">
-            <h3>Active map profile</h3>
-            <label>
-              Profile
-              <select
-                value={profileId ?? ''}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === '__create__') {
-                    setShowSettingsOverlay(false);
-                    openCreateProfileModal();
-                  } else if (!value) {
-                    setProfileId(null);
-                  } else {
-                    setProfileId(Number(value));
-                  }
-                }}
-              >
-                {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
-                <option value="">Demo mode</option>
-                {ownedProfiles.length > 0 && (
-                  <option value="" disabled>
-                    Your profiles
-                  </option>
-                )}
-                {ownedProfiles.map((profile) => (
-                  <option key={`settings-owned-${profile.id}`} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-                {publicProfiles.length > 0 && (
-                  <option value="" disabled>
-                    ----------
-                  </option>
-                )}
-                {publicProfiles.map((profile) => (
-                  <option key={`settings-public-${profile.id}`} value={profile.id}>
-                    {profile.name} (Public)
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="settings-note">
-              <strong>Current selection</strong>
-              <span>{selectedProfile?.name ?? 'Demo mode'}</span>
-            </div>
-            <div className="profile-actions">
-              {authSession?.authenticated && (
+              <div className="settings-actions">
+                <button type="button" onClick={handleAdminSaveSettings}>Save backend settings</button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowSettingsOverlay(false);
-                    openCreateProfileModal();
-                  }}
+                  className="accent-button"
+                  onClick={handleAdminMigrateDatabase}
+                  disabled={isAdminMigrationSubmitting}
                 >
-                  Create profile
+                  {isAdminMigrationSubmitting ? 'Migrating...' : `Migrate to ${adminSettings.preferred_db_backend}`}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSettingsOverlay(false);
-                  void handleEditProfile();
-                }}
-                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
-              >
-                Edit
-              </button>
-              <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
-                Delete
-              </button>
-              <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
-                Export JSON
-              </button>
-              <label className="import-label">
-                Import JSON
-                <input
-                  type="file"
-                  accept="application/json"
-                  onChange={handleImport}
-                  disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
-                />
-              </label>
+              </div>
             </div>
           </div>
+        </details>
+      )}
 
-          {isAdmin && (
+      {isAdmin && adminSettings && (
+        <details className="settings-section">
+          <summary>
+            <div>
+              <strong>Authentication Configuration</strong>
+              <span>Choose username/password or OIDC for the server.</span>
+            </div>
+          </summary>
+          <div className="settings-section__content trip-form">
             <div className="settings-subsection">
-              <h3>Global profile management</h3>
+              <h3>Authentication mode</h3>
+              <label>
+                Mode
+                <select
+                  value={adminSettings.auth_mode}
+                  onChange={(event) =>
+                    setAdminSettings((prev) => (prev ? { ...prev, auth_mode: event.target.value } : prev))
+                  }
+                >
+                  <option value="local">Username / password</option>
+                  <option value="oidc">OIDC</option>
+                </select>
+              </label>
+              <label>
+                OIDC issuer
+                <input
+                  value={adminSettings.oidc_issuer ?? ''}
+                  onChange={(event) =>
+                    setAdminSettings((prev) => (prev ? { ...prev, oidc_issuer: event.target.value } : prev))
+                  }
+                />
+              </label>
+              <label>
+                OIDC client id
+                <input
+                  value={adminSettings.oidc_client_id ?? ''}
+                  onChange={(event) =>
+                    setAdminSettings((prev) => (prev ? { ...prev, oidc_client_id: event.target.value } : prev))
+                  }
+                />
+              </label>
+              <label>
+                OIDC client secret
+                <input
+                  type="password"
+                  value={adminSettings.oidc_client_secret ?? ''}
+                  onChange={(event) =>
+                    setAdminSettings((prev) => (prev ? { ...prev, oidc_client_secret: event.target.value } : prev))
+                  }
+                />
+              </label>
+              <button type="button" className="accent-button" onClick={handleAdminSaveSettings}>
+                Save authentication configuration
+              </button>
+            </div>
+          </div>
+        </details>
+      )}
+
+      {isAdmin && (
+        <details className="settings-section">
+          <summary>
+            <div>
+              <strong>Global Profile Management</strong>
+              <span>Add, edit name/color, delete, and control profile visibility.</span>
+            </div>
+          </summary>
+          <div className="settings-section__content trip-form">
+            <div className="settings-subsection">
+              <h3>Add profile</h3>
               <label>
                 Profile name
                 <input value={newAdminProfileName} onChange={(event) => setNewAdminProfileName(event.target.value)} />
@@ -2911,45 +3132,272 @@ function App() {
                   ))}
                 </select>
               </label>
+              <label>
+                Home country
+                <select value={newAdminProfileHomeCountryCode} onChange={(event) => setNewAdminProfileHomeCountryCode(event.target.value)}>
+                  <option value="">None</option>
+                  {sortedPlaces.country.map((country) => (
+                    <option key={`admin-new-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {renderProfileColorField(newAdminProfileColor, setNewAdminProfileColor)}
               <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={newAdminProfilePublic}
-                  onChange={(event) => setNewAdminProfilePublic(event.target.checked)}
-                />
+                <input type="checkbox" checked={newAdminProfilePublic} onChange={(event) => setNewAdminProfilePublic(event.target.checked)} />
                 Public profile
               </label>
-              <button type="button" className="accent-button" onClick={handleAdminCreateProfile}>
-                Create server profile
-              </button>
-              <ul className="trip-list">
-                {adminProfiles.map((profile) => (
-                  <li key={profile.id} className="trip-card admin-card">
-                    <div className="trip-main">
-                      <strong>{profile.name}</strong>
-                      <span>{profile.owner_label || 'Unknown owner'}</span>
-                    </div>
-                    <div className="admin-actions">
-                      <button type="button" onClick={() => handleAdminEditProfile(profile)}>
-                        Edit
-                      </button>
-                      <button type="button" onClick={() => handleAdminToggleProfilePublic(profile)}>
-                        {profile.is_public ? 'Make private' : 'Make public'}
-                      </button>
-                      <button type="button" onClick={() => handleAdminDeleteProfile(profile.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <button type="button" className="accent-button" onClick={handleAdminCreateProfile}>Add profile</button>
             </div>
-          )}
-        </div>
-      </details>
+            <ul className="trip-list">
+              {adminProfiles.map((profile) => (
+                <li key={profile.id} className="trip-card admin-card">
+                  <div className="trip-main">
+                    <strong>{profile.name}</strong>
+                    <span>{profile.owner_label || 'Unknown owner'}</span>
+                  </div>
+                  <div className="admin-actions">
+                    <label>
+                      Name
+                      <input
+                        value={adminProfileEdits[profile.id]?.name ?? ''}
+                        onChange={(event) =>
+                          setAdminProfileEdits((prev) => ({
+                            ...prev,
+                            [profile.id]: {
+                              ...(prev[profile.id] ?? {
+                                name: profile.name,
+                                owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                                color: profile.color,
+                                home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                                is_public: profile.is_public,
+                              }),
+                              name: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Owner
+                      <select
+                        value={adminProfileEdits[profile.id]?.owner_user_id ?? ''}
+                        onChange={(event) =>
+                          setAdminProfileEdits((prev) => ({
+                            ...prev,
+                            [profile.id]: {
+                              ...(prev[profile.id] ?? {
+                                name: profile.name,
+                                owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                                color: profile.color,
+                                home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                                is_public: profile.is_public,
+                              }),
+                              owner_user_id: event.target.value,
+                            },
+                          }))
+                        }
+                      >
+                        <option value="">Unowned</option>
+                        {adminUsers.map((user) => (
+                          <option key={`owner-${profile.id}-${user.id}`} value={user.id}>
+                            {user.display_name || user.username || `User ${user.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Home country
+                      <select
+                        value={adminProfileEdits[profile.id]?.home_country_code ?? ''}
+                        onChange={(event) =>
+                          setAdminProfileEdits((prev) => ({
+                            ...prev,
+                            [profile.id]: {
+                              ...(prev[profile.id] ?? {
+                                name: profile.name,
+                                owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                                color: profile.color,
+                                home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                                is_public: profile.is_public,
+                              }),
+                              home_country_code: event.target.value,
+                            },
+                          }))
+                        }
+                      >
+                        <option value="">None</option>
+                        {sortedPlaces.country.map((country) => (
+                          <option key={`admin-home-${profile.id}-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                            {country.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Color
+                      <input
+                        type="color"
+                        value={adminProfileEdits[profile.id]?.color ?? profile.color}
+                        onChange={(event) =>
+                          setAdminProfileEdits((prev) => ({
+                            ...prev,
+                            [profile.id]: {
+                              ...(prev[profile.id] ?? {
+                                name: profile.name,
+                                owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                                color: profile.color,
+                                home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                                is_public: profile.is_public,
+                              }),
+                              color: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="toggle">
+                      <input
+                        type="checkbox"
+                        checked={adminProfileEdits[profile.id]?.is_public ?? profile.is_public}
+                        onChange={(event) =>
+                          setAdminProfileEdits((prev) => ({
+                            ...prev,
+                            [profile.id]: {
+                              ...(prev[profile.id] ?? {
+                                name: profile.name,
+                                owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                                color: profile.color,
+                                home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                                is_public: profile.is_public,
+                              }),
+                              is_public: event.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      Public
+                    </label>
+                    <button type="button" onClick={() => handleAdminSaveProfile(profile.id)}>Save</button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAdminProfileEdits((prev) => ({
+                          ...prev,
+                          [profile.id]: {
+                            ...(prev[profile.id] ?? {
+                              name: profile.name,
+                              owner_user_id: profile.owner_user_id ? String(profile.owner_user_id) : '',
+                              color: profile.color,
+                              home_country_code: (profile.home_country_code ?? '').toUpperCase(),
+                              is_public: profile.is_public,
+                            }),
+                            is_public: !(prev[profile.id]?.is_public ?? profile.is_public),
+                          },
+                        }))
+                      }
+                    >
+                      {(adminProfileEdits[profile.id]?.is_public ?? profile.is_public) ? 'Make private' : 'Make public'}
+                    </button>
+                    <button type="button" onClick={() => handleAdminDeleteProfile(profile.id)}>Delete</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
+
+      {isAdmin && (
+        <details className="settings-section">
+          <summary>
+            <div>
+              <strong>Global User Management</strong>
+              <span>Add users, edit identity details, promote admins, and reset passwords.</span>
+            </div>
+          </summary>
+          <div className="settings-section__content trip-form">
+            <div className="settings-subsection">
+              <h3>Add user</h3>
+              <label>
+                Username
+                <input value={newAdminUserUsername} onChange={(event) => setNewAdminUserUsername(event.target.value)} />
+              </label>
+              <label>
+                Display name
+                <input value={newAdminUserDisplayName} onChange={(event) => setNewAdminUserDisplayName(event.target.value)} />
+              </label>
+              <label>
+                Password
+                <input type="password" value={newAdminUserPassword} onChange={(event) => setNewAdminUserPassword(event.target.value)} />
+              </label>
+              <label className="toggle">
+                <input type="checkbox" checked={newAdminUserIsAdmin} onChange={(event) => setNewAdminUserIsAdmin(event.target.checked)} />
+                Create as admin
+              </label>
+              <button type="button" className="accent-button" onClick={handleAdminCreateUser}>Add user</button>
+            </div>
+            <ul className="trip-list">
+              {adminUsers.map((user) => (
+                <li key={user.id} className="trip-card admin-card">
+                  <div className="trip-main">
+                    <strong>{user.display_name || user.username || `User ${user.id}`}</strong>
+                    <span>@{user.username || 'n/a'} · {user.role}</span>
+                  </div>
+                  <div className="admin-actions">
+                    <label>
+                      Username
+                      <input
+                        value={adminUserEdits[user.id]?.username ?? ''}
+                        onChange={(event) =>
+                          setAdminUserEdits((prev) => ({
+                            ...prev,
+                            [user.id]: {
+                              username: event.target.value,
+                              display_name: prev[user.id]?.display_name ?? user.display_name ?? '',
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Display name
+                      <input
+                        value={adminUserEdits[user.id]?.display_name ?? ''}
+                        onChange={(event) =>
+                          setAdminUserEdits((prev) => ({
+                            ...prev,
+                            [user.id]: {
+                              username: prev[user.id]?.username ?? user.username ?? '',
+                              display_name: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <button type="button" onClick={() => handleAdminSaveUser(user.id)}>Save details</button>
+                    <button type="button" onClick={() => handleAdminUserRole(user.id, user.is_admin ? 'user' : 'admin')}>
+                      {user.is_admin ? 'Demote' : 'Promote'}
+                    </button>
+                    <input
+                      type="password"
+                      placeholder="New password"
+                      value={adminPasswordReset[user.id] ?? ''}
+                      onChange={(event) => setAdminPasswordReset((prev) => ({ ...prev, [user.id]: event.target.value }))}
+                    />
+                    <button type="button" onClick={() => handleAdminResetPassword(user.id)}>Reset password</button>
+                    <button type="button" onClick={() => handleAdminDeleteUser(user.id)}>Delete</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
     </>
   );
+
 
   if (authLoading) {
     return (
@@ -3061,6 +3509,14 @@ function App() {
                 value={newProfileName}
                 onChange={(event) => setNewProfileName(event.target.value)}
               />
+              <select value={newProfileHomeCountryCode} onChange={(event) => setNewProfileHomeCountryCode(event.target.value)}>
+                <option value="">Home country</option>
+                {sortedPlaces.country.map((country) => (
+                  <option key={`first-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
               {renderProfileColorField(newProfileColor, setNewProfileColor)}
               <label className="toggle">
                 <input
@@ -3094,6 +3550,14 @@ function App() {
                 value={newProfileName}
                 onChange={(event) => setNewProfileName(event.target.value)}
               />
+              <select value={newProfileHomeCountryCode} onChange={(event) => setNewProfileHomeCountryCode(event.target.value)}>
+                <option value="">Home country</option>
+                {sortedPlaces.country.map((country) => (
+                  <option key={`new-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
               {renderProfileColorField(newProfileColor, setNewProfileColor)}
               <label className="toggle">
                 <input
@@ -3132,6 +3596,14 @@ function App() {
                 value={editProfileName}
                 onChange={(event) => setEditProfileName(event.target.value)}
               />
+              <select value={selectedProfileHomeCountryCode} onChange={(event) => setSelectedProfileHomeCountryCode(event.target.value)}>
+                <option value="">Home country</option>
+                {sortedPlaces.country.map((country) => (
+                  <option key={`edit-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
               {renderProfileColorField(selectedProfileColor, setSelectedProfileColor)}
               <label className="toggle">
                 <input
@@ -3158,125 +3630,131 @@ function App() {
 
       <header className="header">
         <div className="brand-panel">
-          <h1>AtlasTracker</h1>
-          <p>Profiles, routes, stats, and shared world coverage in one atlas.</p>
-          <div className="auth-controls">
-            <span className="auth-user">
-              {authSession?.authenticated
-                ? authSession.user?.display_name || authSession.user?.username || authSession.user?.email || 'Signed in'
-                : 'Not logged in'}
-            </span>
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={() => setThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-            >
-              {themeMode === 'dark' ? 'Light' : 'Dark'}
-            </button>
-            <button type="button" className="theme-toggle" onClick={() => setShowSettingsOverlay(true)}>
-              Settings
-            </button>
-            {authSession?.authenticated ? (
-              <button type="button" className="theme-toggle" onClick={handleLogout}>
-                Log out
-              </button>
-            ) : authSession?.oidc_enabled ? (
-              <button type="button" className="theme-toggle" onClick={() => (window.location.href = '/api/auth/login')}>
-                Log in
-              </button>
-            ) : (
+          <div className="brand-heading">
+            <h1>AtlasTracker</h1>
+            <div className="auth-controls">
+              <span className="auth-user">
+                {authSession?.authenticated
+                  ? authSession.user?.display_name || authSession.user?.username || authSession.user?.email || 'Signed in'
+                  : 'Not logged in'}
+              </span>
               <button
                 type="button"
                 className="theme-toggle"
-                onClick={() => setShowLoginModal(true)}
-                disabled={!authSession?.has_local_users}
+                onClick={() => setThemeMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
               >
-                Log in
+                {themeMode === 'dark' ? 'Light' : 'Dark'}
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="profile-panel">
-          <label>
-            Profile
-            <select
-              value={profileId ?? ''}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === '__create__') {
-                  openCreateProfileModal();
-                } else if (!value) {
-                  setProfileId(null);
-                } else {
-                  setProfileId(Number(value));
-                }
-              }}
-            >
-              {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
-              <option value="">Demo mode</option>
-              {ownedProfiles.length > 0 && (
-                <option value="" disabled>
-                  Your profiles
-                </option>
+              <button type="button" className="theme-toggle" onClick={() => setShowSettingsOverlay(true)}>
+                Settings
+              </button>
+              {authSession?.authenticated ? (
+                <button type="button" className="theme-toggle" onClick={handleLogout}>
+                  Log out
+                </button>
+              ) : authSession?.oidc_enabled ? (
+                <button type="button" className="theme-toggle" onClick={() => (window.location.href = '/api/auth/login')}>
+                  Log in
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="theme-toggle"
+                  onClick={() => setShowLoginModal(true)}
+                  disabled={!authSession?.has_local_users}
+                >
+                  Log in
+                </button>
               )}
-              {ownedProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-              {publicProfiles.length > 0 && (
-                <option value="" disabled>
-                  ----------
-                </option>
-              )}
-              {publicProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name} (Public)
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="profile-actions">
-            <span className="profile-actions-title">Profile actions</span>
-            <button type="button" onClick={handleEditProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
-              Edit
-            </button>
-            <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
-              Delete
-            </button>
-            <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
-              Export JSON
-            </button>
-            <label className="import-label">
-              Import JSON
-              <input
-                type="file"
-                accept="application/json"
-                onChange={handleImport}
-                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
-              />
-            </label>
+            </div>
           </div>
-        </div>
 
-        <div className="profile-summary">
-          <div className="summary-card">
-            <span>Selected Profile</span>
-            <strong>{selectedProfile?.name ?? 'Demo mode'}</strong>
-            <small>
-              {selectedProfile
-                ? selectedProfile.is_public
-                  ? 'Shared publicly'
-                  : 'Private profile'
-                : 'Viewing the collective server atlas'}
-            </small>
-          </div>
-          <div className="summary-card">
-            <span>Owner</span>
-            <strong>{selectedProfile?.is_owned ? 'You' : selectedProfile ? 'Public view' : 'Collective server'}</strong>
-            <small>{selectedProfile ? normalizeHexColor(selectedProfile.color) : 'Map colors reflect contributing profiles'}</small>
+          <div className="profile-panel profile-panel-compact">
+            <div className="profile-compact-grid">
+              <label className="profile-field profile-selector summary-card">
+                <span>Profile</span>
+                <strong>{selectedProfile?.name ?? 'Demo mode'}</strong>
+                <select
+                  value={profileId ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === '__create__') {
+                      openCreateProfileModal();
+                    } else if (!value) {
+                      setProfileId(null);
+                    } else {
+                      setProfileId(Number(value));
+                    }
+                  }}
+                >
+                  {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
+                  <option value="">Demo mode</option>
+                  {ownedProfiles.length > 0 && (
+                    <option value="" disabled>
+                      Your profiles
+                    </option>
+                  )}
+                  {ownedProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                  {publicProfiles.length > 0 && (
+                    <option value="" disabled>
+                      ----------
+                    </option>
+                  )}
+                  {publicProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name} (Public)
+                    </option>
+                  ))}
+                </select>
+                <small>Choose the active atlas view</small>
+              </label>
+
+              <div className="profile-info-card summary-card">
+                <span>Profile info</span>
+                <strong>
+                  {selectedProfile?.is_owned ? 'Owned by you' : selectedProfile ? 'Public profile view' : 'Collective server atlas'}
+                </strong>
+                <small>
+                  {selectedProfile
+                    ? `${selectedProfile.is_public ? 'Public' : 'Private'} • ${countryNameByCode.get((selectedProfile.home_country_code ?? '').toUpperCase()) ?? 'No home country set'}`
+                    : 'Attributed colors reflect contributing profiles'}
+                </small>
+                {selectedProfile && (
+                  <span className="profile-color-indicator" aria-label="Profile color">
+                    <span
+                      className="profile-color-indicator__swatch"
+                      style={{ '--swatch-color': normalizeHexColor(selectedProfile.color) } as CSSProperties}
+                    />
+                    <span>Profile color</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="profile-actions">
+              <button type="button" onClick={handleEditProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
+                Edit
+              </button>
+              <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
+                Delete
+              </button>
+              <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
+                Export JSON
+              </button>
+              <label className="import-label">
+                Import JSON
+                <input
+                  type="file"
+                  accept="application/json"
+                  onChange={handleImport}
+                  disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+                />
+              </label>
+            </div>
           </div>
         </div>
 
@@ -3289,9 +3767,32 @@ function App() {
             <small>{stats?.countries.percent ?? 0}% visited</small>
           </div>
           <div className="stat-card">
+            <span>Continents</span>
+            <strong>
+              {stats?.continents.visited ?? 0} / {stats?.continents.total ?? 0}
+            </strong>
+            <small>Global coverage</small>
+          </div>
+          <div className="stat-card">
             <span>Trips / Miles</span>
             <strong>{stats?.trip_logs.count ?? 0}</strong>
-            <small>{Math.round(stats?.trip_logs.estimated_miles ?? 0).toLocaleString()} mi total</small>
+            <small>{formatDistance(stats?.trip_logs.estimated_miles ?? 0, measurementSystem)} total</small>
+          </div>
+          <div className="stat-card">
+            <span>States</span>
+            <strong>
+              {stats?.states.visited ?? 0} / {stats?.states.total ?? 0}
+            </strong>
+            <small>Visited state or province regions</small>
+          </div>
+          <div className="stat-card">
+            <span>Cities / Airports</span>
+            <strong>
+              {(stats?.cities.visited ?? 0) + (stats?.airports.visited ?? 0)}
+            </strong>
+            <small>
+              {(stats?.cities.visited ?? 0).toLocaleString()} cities and {(stats?.airports.visited ?? 0).toLocaleString()} airports
+            </small>
           </div>
           <div className="stat-card">
             <span>Leaderboard</span>
@@ -3382,16 +3883,49 @@ function App() {
                 </label>
               )}
               {activeTab === 'site' && (
-                <label className="scope-filter">
-                  Category
-                  <select value={siteCategoryFilter} onChange={(event) => setSiteCategoryFilter(event.target.value)}>
-                    {siteCategories.map((category) => (
-                      <option key={category} value={category}>
-                        {category === 'all' ? 'All categories' : category.replaceAll('_', ' ')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label className="scope-filter">
+                    Source
+                    <select
+                      value={siteFilters.sourceType}
+                      onChange={(event) => updateSiteSourceFilter(event.target.value)}
+                    >
+                      <option value="all">All sources</option>
+                      <option value="unesco">UNESCO</option>
+                      <option value="dark_sky">Dark Sky</option>
+                      <option value="festival">Festival</option>
+                      <option value="michelin">Michelin</option>
+                    </select>
+                  </label>
+                  <label className="scope-filter">
+                    Type / category
+                    <select
+                      value={siteFilters.category}
+                      onChange={(event) => setSiteFilters((prev) => ({ ...prev, category: event.target.value }))}
+                    >
+                      {siteCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category === 'all'
+                            ? `All ${siteFilters.sourceType === 'all' ? 'types' : siteSourceRegistry[siteFilters.sourceType as SiteSourceType].label.toLowerCase() + ' types'}`
+                            : formatSiteCategoryLabel(category)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="scope-filter">
+                    Country
+                    <select
+                      value={siteFilters.country}
+                      onChange={(event) => setSiteFilters((prev) => ({ ...prev, country: event.target.value }))}
+                    >
+                      {siteCountries.map((country) => (
+                        <option key={country} value={country.toLowerCase()}>
+                          {country === 'all' ? 'All countries' : country}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
               )}
               {activeTab !== 'state' && activeTab !== 'city' && (
                 <label className="scope-filter">
@@ -3462,23 +3996,18 @@ function App() {
                       const { title, subtitle, badges } = getPlaceCardContent(place, activeTab);
                       return (
                         <span className="place-card__body">
-                          <span className="place-card__topline">
-                            <span className={`place-name place-card__title${activeTab === 'airport' ? ' airport-name' : ''}`} onClick={() => focusOnPlace(place)}>
-                              {title}
-                            </span>
-                            {badges.length > 0 && (
-                              <span className="place-card__badges" aria-hidden="true">
-                                {badges.map((badge) => (
-                                  <span
-                                    key={`${place.id}-${badge}`}
-                                    className={`place-card__badge${activeTab === 'airport' ? ' airport-code' : ''}`}
-                                  >
-                                    {badge}
-                                  </span>
-                                ))}
-                              </span>
-                            )}
+                          <span className={`place-name place-card__title${activeTab === 'airport' ? ' airport-name' : ''}`} onClick={() => focusOnPlace(place)}>
+                            {title}
                           </span>
+                          {badges.length > 0 && (
+                            <span className="place-card__badges" aria-hidden="true">
+                              {badges.map((badge) => (
+                                <span key={`${place.id}-${badge}`} className={`place-card__badge${activeTab === 'airport' ? ' airport-code' : ''}`}>
+                                  {badge}
+                                </span>
+                              ))}
+                            </span>
+                          )}
                           {subtitle && <span className="place-card__subtitle">{subtitle}</span>}
                         </span>
                       );
@@ -3549,6 +4078,7 @@ function App() {
           )}
 
           <div ref={mapContainerRef} className={`map ${mainView === 'map' ? '' : 'map-hidden'}`} />
+          {mainView === 'map' && selectedMapPlace?.id.startsWith('site-') && renderSiteDetailPanel(selectedMapPlace)}
 
           {mainView === 'trips' && (
             <div className="detail-panel">
@@ -3697,7 +4227,7 @@ function App() {
                   <li key={trip.id} className="trip-card">
                     <div className="trip-main">
                       <strong>{trip.route_points.map((point) => point.name).join(' -> ')}</strong>
-                      <span>{Math.round(trip.estimated_miles).toLocaleString()} mi estimated</span>
+                      <span>{formatDistance(trip.estimated_miles, measurementSystem)} estimated</span>
                       <small>{trip.flown_on ? `Date: ${trip.flown_on}` : 'Date not provided'}</small>
                     </div>
                     {typeof profileId === 'number' && canEditSelectedProfile && (
@@ -3797,7 +4327,7 @@ function App() {
                         <div>
                           <strong>{entry.name}</strong>
                           <small>
-                            {entry.countries ?? 0} countries | {Math.round(entry.miles ?? 0).toLocaleString()} mi |{' '}
+                            {entry.countries ?? 0} countries | {formatDistance(entry.miles ?? 0, measurementSystem)} |{' '}
                             {entry.achievements ?? 0} achievements
                           </small>
                         </div>

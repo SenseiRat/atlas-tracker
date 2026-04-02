@@ -14,7 +14,6 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data_sources"
 AIRPORTS_PATH = DATA_DIR / "airports.json"
 CITIES_PATH = DATA_DIR / "cities.json"
-SITES_PATH = DATA_DIR / "sites.json"
 
 OURAIRPORTS_URL = "https://ourairports.com/data/airports.csv"
 GEONAMES_CITIES15000_ZIP = "https://download.geonames.org/export/dump/cities15000.zip"
@@ -289,23 +288,7 @@ def main() -> None:
     cities = fetch_cities()
     write_json(CITIES_PATH, cities)
     print(f"  cities: {len(cities)}")
-
-    print("Refreshing sites...")
-    sites: list[dict] = []
-    sites.extend(fetch_unesco_sites())
-    sites.extend(fetch_protected_areas())
-    sites.extend(fetch_michelin_restaurants())
-    sites.extend(fetch_osm_famous_beverage_places())
-    sites.extend(curated_wonders())
-    sites.extend(curated_worlds_50_best())
-
-    existing_sites = []
-    if SITES_PATH.exists():
-        existing_sites = json.loads(SITES_PATH.read_text(encoding="utf-8"))
-
-    merged = dedupe_sites([*existing_sites, *sites])
-    write_json(SITES_PATH, merged)
-    print(f"  sites: {len(merged)}")
+    print("Skipping split site datasets (managed via whc001.json, darksky.json, festivals.json, and michelin_restaurants.json).")
     print("Done. Re-run seed script to push changes into the database: python3 scripts/seed_db.py")
 
 
