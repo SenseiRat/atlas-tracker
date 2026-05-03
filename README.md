@@ -103,10 +103,7 @@ The repo ships with a **small curated starter dataset** in `data_sources/` so th
 - `countries.geojson`: simplified placeholder polygons.
 - `cities.json`: curated major cities.
 - `airports.json`: curated major airports.
-- `whc001.json`: UNESCO World Heritage site seed data.
-- `darksky.json`: DarkSky place seed data.
-- `festivals.json`: cultural festival seed data.
-- `michelin_restaurants.json`: Michelin restaurant seed data.
+- `sites.json`: curated UNESCO-style landmarks.
 
 ### Replacing with full datasets
 
@@ -146,11 +143,7 @@ data_sources/airports.json
 
 4) **Sites**
 
-- Use the split starter datasets in `data_sources/`:
-  - `whc001.json`
-  - `darksky.json`
-  - `festivals.json`
-  - `michelin_restaurants.json`
+- Keep `data_sources/sites.json` as curated starter data, or replace with your own list.
 
 5) **Replace files and let the app sync them**
 
@@ -221,10 +214,12 @@ python scripts/seed_db.py
   - Refreshes:
     - `data_sources/airports.json` from OurAirports (major airports with valid IATA code).
     - `data_sources/cities.json` from GeoNames `cities15000` (population >= 10k).
-    - Site datasets are read from the split files:
-      - `data_sources/whc001.json`
-      - `data_sources/darksky.json`
-      - `data_sources/festivals.json`
+    - `data_sources/sites.json` by combining:
+      - UNESCO sites (Wikidata),
+      - protected areas/national parks (Wikidata),
+      - Michelin-starred restaurants (Wikidata),
+      - brewery/winery/distillery/vineyard places (OpenStreetMap Overpass + wikidata-tagged POIs),
+      - curated wonders + Worlds 50 Best items.
 
 After refresh, the running app will detect the changed files on the next poll and sync them automatically. For an immediate sync:
 
@@ -237,9 +232,4 @@ If you want the server to run the refresh scripts itself, enable `DATA_SYNC_EXTE
 
 ## List Work
 - TODO: Tighten city inclusion criteria (current list is too broad) and add a lookup + manual add flow for cities not in the curated list.
-- TODO: Add Dark Sky destinations (International Dark Sky Places list).
-- TODO: Add famous cultural festivals.
-- TODO: Add national/iconic foods or regional food collections.
-- TODO: Expand nature achievements (highest mountain, etc.).
-- TODO: Expand Michelin-star coverage to include comparable regional review/ranking sources where Michelin is limited.
-- TODO: Migrate/expand protected areas, national parks, and reserves data to WDPA-backed coverage.
+- TODO: Migrate/expand protected areas, national parks, and reserves data to WDPA-backed coverage. (https://d1gam3xoknrgr2.cloudfront.net/current/WDPA_Apr2026_Public.zip) too large for plane
