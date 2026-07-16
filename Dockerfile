@@ -38,6 +38,10 @@ ENV OIDC_COOKIE_SECURE=0
 ENV UVICORN_HOST=0.0.0.0
 ENV UVICORN_PORT=8000
 ENV UVICORN_WORKERS=1
+# Which upstream IPs may set X-Forwarded-* headers. Default trusts only
+# localhost; set to your reverse proxy's IP (or '*' if the proxy is the only
+# way to reach the container) when running behind one.
+ENV FORWARDED_ALLOW_IPS=127.0.0.1
 
 COPY server/requirements.txt ./server/requirements.txt
 RUN pip install --no-cache-dir -r server/requirements.txt
@@ -46,7 +50,11 @@ COPY server ./server
 COPY data_sources ./data_sources
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /data
+RUN useradd --system --uid 1000 --create-home appuser \
+    && mkdir -p /data \
+    && chown appuser /data
+
+USER appuser
 
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn server.main:app --host ${UVICORN_HOST} --port ${UVICORN_PORT} --workers ${UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "uvicorn server.main:app --host ${UVICORN_HOST} --port ${UVICORN_PORT} --workers ${UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\""]

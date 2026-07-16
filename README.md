@@ -70,27 +70,53 @@ You can configure the container with these environment variables:
 
 ## Local development
 
+The backend is a package under `server/app/`; run uvicorn from the repository
+root so `server.main:app` resolves. The dev frontend proxies `/api` to the
+backend on port 8000 (see `frontend/vite.config.ts`), so the two run
+independently:
+
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev        # http://localhost:5173, proxies /api -> :8000
 ```
 
-In another terminal:
+In another terminal, from the repository root:
 
 ```bash
-cd server
-pip install -r requirements.txt
-DATA_DIR=../data DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
+pip install -r server/requirements.txt
+DATA_DIR=./data DATA_SOURCES_DIR=./data_sources uvicorn server.main:app --reload
 ```
 
 Use Postgres locally by setting `DB_HOST`, `DB_PORT`, and `DB_NAME` (and optionally omitting `DATA_DIR`):
 
 ```bash
-cd server
-pip install -r requirements.txt
-DB_HOST=localhost DB_PORT=5432 DB_NAME=places_been DATA_SOURCES_DIR=../data_sources uvicorn main:app --reload
+pip install -r server/requirements.txt
+DB_HOST=localhost DB_PORT=5432 DB_NAME=places_been DATA_SOURCES_DIR=./data_sources uvicorn server.main:app --reload
 ```
+
+## Tests
+
+Backend (pytest against an in-process TestClient with tiny fixture datasets):
+
+```bash
+pip install -r server/requirements-dev.txt
+python -m pytest server/tests -q
+```
+
+Frontend (vitest for the pure stat/achievement logic and the shared UI
+components; `typecheck` runs `tsc --noEmit`):
+
+```bash
+cd frontend
+npm run test
+npm run typecheck
+```
+
+> Note: auth session cookies are now HMAC-signed. Upgrading from an older build
+> invalidates existing sessions once — users simply log in again. When OIDC is
+> not configured, the signing key is generated automatically and persisted to
+> `DATA_DIR/session_secret` so sessions survive restarts.
 
 ## Troubleshooting dependency install (npm/pip)
 

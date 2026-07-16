@@ -4,3 +4,7 @@ frontend/dist
 __pycache__
 *.pyc
 world-tracker-data
+data_bck/
+.tmp-check/
+*Zone.Identifier
+.venv/

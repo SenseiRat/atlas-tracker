@@ -6,3 +6,8 @@ frontend/dist
 world-tracker-data
 data_sources/raw
 *.log
+data_bck
+.tmp-check
+**/*Zone.Identifier
+server/tests
+frontend/src/**/*.test.*

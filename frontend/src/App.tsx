@@ -1,4 +1,8 @@
-import { ChangeEvent, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ChangeEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { api } from './api/client';
+import { useToasts } from './components/ui/toast';
+import { useConfirm } from './components/ui/ConfirmDialog';
+import { Modal } from './components/ui/Modal';
 import maplibregl, { LngLatBoundsLike, Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { AchievementsPanel } from './AchievementsPanel';
@@ -7,7 +11,7 @@ import { buildAchievementModel } from './achievements';
 import { buildTravelStatsModel } from './travelStats';
 
 type PlaceType = 'country' | 'state' | 'city' | 'airport' | 'site';
-type ActiveProfile = number | 'all' | null;
+type ActiveProfile = number | null;
 type ListScope = 'all' | 'visited' | 'unvisited' | 'visited_countries';
 type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
 type MeasurementSystem = 'metric' | 'imperial';
@@ -212,7 +216,6 @@ type AuthSession = {
   auth_mode?: 'oidc' | 'local';
   local_users_count?: number;
   has_local_users?: boolean;
-  app_settings?: AppSettings;
   user?: {
     id: number;
     username?: string | null;
@@ -742,13 +745,6 @@ function formatDistance(valueMiles: number, measurementSystem: MeasurementSystem
   return `${Math.round(valueMiles).toLocaleString()} mi`;
 }
 
-function formatElevation(valueMeters: number, measurementSystem: MeasurementSystem) {
-  if (measurementSystem === 'metric') {
-    return `${Math.round(valueMeters).toLocaleString()} m`;
-  }
-  return `${Math.round(valueMeters * 3.28084).toLocaleString()} ft`;
-}
-
 const siteSourceRegistry: Record<
   SiteSourceType,
   {
@@ -825,7 +821,6 @@ const mapThemeTokens: Record<
     background: string;
     countryDefault: string;
     countryOutline: string;
-    clusterColor: string;
     stroke: string;
     city: string;
     airport: string;
@@ -841,7 +836,6 @@ const mapThemeTokens: Record<
     background: '#091321',
     countryDefault: '#5f7287',
     countryOutline: '#d4e1ef',
-    clusterColor: '#93c5fd',
     stroke: '#e6eef8',
     city: '#7dd3fc',
     airport: '#f59e0b',
@@ -856,7 +850,6 @@ const mapThemeTokens: Record<
     background: '#dbe8f2',
     countryDefault: '#d7e0ea',
     countryOutline: '#31465c',
-    clusterColor: '#2563eb',
     stroke: '#102235',
     city: '#0f766e',
     airport: '#c2410c',
@@ -869,23 +862,21 @@ const mapThemeTokens: Record<
   },
 };
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Request failed: ${response.status} ${details}`);
-  }
-  return response.json() as Promise<T>;
-}
-
 function App() {
+  const profileDataRequestRef = useRef(0);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const countryGeoRef = useRef<MapFeatureCollection | null>(null);
   const stateGeoRef = useRef<MapFeatureCollection | null>(null);
 
   const [isMapReady, setIsMapReady] = useState(false);
-  const [uiError, setUiError] = useState<string | null>(null);
+  const { pushToast } = useToasts();
+  const confirm = useConfirm();
+  // Surface errors as dismissible, auto-clearing toasts instead of a persistent
+  // banner that could hide behind modals and never clear.
+  const setUiError = useCallback((message: string | null) => {
+    if (message) pushToast(message, 'error');
+  }, [pushToast]);
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1070,14 +1061,6 @@ function App() {
     }
   }, [authSession?.authenticated, authSession?.user?.id, authSession?.user?.theme_preference, authSession?.user?.measurement_system]);
 
-  useEffect(() => {
-    if (!showSettingsOverlay) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [showSettingsOverlay]);
 
   const sortedPlaces = useMemo<Record<PlaceType, Place[]>>(
     () => ({
@@ -1181,17 +1164,26 @@ function App() {
     return map;
   }, [airportOptions]);
 
-  const airportAutocomplete = (input: string) => {
+  const airportAutocomplete = useCallback((input: string) => {
     const normalized = input.trim().toLowerCase();
     if (!normalized) return airportOptions.slice(0, 60);
     return airportOptions
       .filter((airport) => (placeSearchTextByType.airport.get(airport.id) ?? '').includes(normalized))
       .slice(0, 60);
-  };
+  }, [airportOptions, placeSearchTextByType]);
 
   const airportAutocompleteOptions = useMemo(() => {
     return airportAutocomplete(deferredSearch.airport);
-  }, [airportOptions, deferredSearch.airport, placeSearchTextByType]);
+  }, [airportAutocomplete, deferredSearch.airport]);
+
+  // Memoize the trip-form datalist suggestions so they only recompute when the
+  // relevant query changes, not on every unrelated re-render.
+  const originAirportOptions = useMemo(() => airportAutocomplete(tripForm.origin_query), [airportAutocomplete, tripForm.origin_query]);
+  const destinationAirportOptions = useMemo(() => airportAutocomplete(tripForm.destination_query), [airportAutocomplete, tripForm.destination_query]);
+  const layoverAirportOptions = useMemo(
+    () => tripForm.layover_queries.map((query) => airportAutocomplete(query)),
+    [airportAutocomplete, tripForm.layover_queries],
+  );
 
   const resolveAirportId = (value: string) => {
     const input = value.trim();
@@ -1208,7 +1200,7 @@ function App() {
   };
 
   const visitedIds = useMemo(() => {
-    if (profileId === 'all' || profileId === null) {
+    if (profileId === null) {
       return new Set(visits.map((visit) => visit.place_id));
     }
     return new Set(visits.filter((visit) => visit.profile_id === profileId).map((visit) => visit.place_id));
@@ -1312,8 +1304,7 @@ function App() {
   }, [places.state]);
 
   const isCollectiveDemoMode = profileId === null;
-  const isAttributedProfileAggregate = profileId === 'all';
-  const isMultiProfileView = isCollectiveDemoMode || isAttributedProfileAggregate;
+  const isMultiProfileView = isCollectiveDemoMode;
   const defaultVisuals = useMemo(() => createProfileVisuals(defaultProfileColor, themeMode), [themeMode]);
   const activeVisits = useMemo(
     () => (isMultiProfileView ? visits : visits.filter((visit) => visit.profile_id === profileId)),
@@ -1358,6 +1349,9 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem('tracker-theme', themeMode);
+    // Mirror the theme onto the document root so overlays rendered outside the
+    // .app subtree (toasts, confirm dialogs) inherit the same tokens.
+    document.documentElement.setAttribute('data-theme', themeMode);
   }, [themeMode]);
 
   useEffect(() => {
@@ -1396,7 +1390,6 @@ function App() {
   const refreshAuthSession = async () => {
     const session = await api<AuthSession>('/api/auth/session');
     setAuthSession(session);
-    setAdminSettings(session.app_settings ?? null);
     return session;
   };
 
@@ -1419,13 +1412,12 @@ function App() {
     const publicProfiles = data.filter((profile) => !profile.is_owned && profile.is_public);
     const preferredFromAccount =
       typeof authSession?.user?.default_profile_id === 'number'
-        ? data.find((profile) => profile.id === authSession.user.default_profile_id) ?? null
+        ? data.find((profile) => profile.id === authSession.user?.default_profile_id) ?? null
         : null;
     const preferred = preferredFromAccount ?? (authSession?.authenticated ? ownedProfiles[0] ?? publicProfiles[0] : publicProfiles[0]);
 
     const hasCurrentSelection =
       profileId === null ||
-      profileId === 'all' ||
       (typeof profileId === 'number' && data.some((profile) => profile.id === profileId));
     if (!hasCurrentSelection) {
       setProfileId(preferred?.id ?? null);
@@ -1434,15 +1426,19 @@ function App() {
   };
 
   const refreshVisitsStatsAndTrips = async (active: ActiveProfile) => {
-    const visitsPath = active === null || active === 'all' ? '/api/visits' : `/api/visits?profile_id=${active}`;
-    const statsPath = active === null || active === 'all' ? '/api/stats' : `/api/stats?profile_id=${active}`;
-    const tripsPath = active === null || active === 'all' ? '/api/trip-logs' : `/api/trip-logs?profile_id=${active}`;
+    const visitsPath = active === null ? '/api/visits' : `/api/visits?profile_id=${active}`;
+    const statsPath = active === null ? '/api/stats' : `/api/stats?profile_id=${active}`;
+    const tripsPath = active === null ? '/api/trip-logs' : `/api/trip-logs?profile_id=${active}`;
 
+    // Guard against out-of-order responses: only the most recent call applies
+    // its results, so rapidly switching profiles can't leave stale data.
+    const seq = ++profileDataRequestRef.current;
     const [visitsData, statsData, tripsData] = await Promise.all([
       api<Visit[]>(visitsPath),
       api<Stats>(statsPath),
       api<TripLog[]>(tripsPath),
     ]);
+    if (seq !== profileDataRequestRef.current) return;
 
     setVisits(visitsData);
     setStats(statsData);
@@ -1587,7 +1583,7 @@ function App() {
 
         if (stateResult.status !== 'fulfilled') {
           console.error('State layer failed to load.', stateResult.reason);
-          setUiError((current) => current ?? 'State overlays could not be loaded.');
+          setUiError('State overlays could not be loaded.');
         }
 
         map.addSource('countries', { type: 'geojson', data: countryGeo as any });
@@ -2012,7 +2008,7 @@ function App() {
       routeSource.setData({ type: 'FeatureCollection', features: routeFeatures } as any);
     } catch (error) {
       console.error('Failed to update map sources for the active profile.', error);
-      setUiError((current) => current ?? 'Some profile data could not be drawn on the map.');
+      setUiError('Some profile data could not be drawn on the map.');
     }
   }, [activeTrips, activeVisits, defaultVisuals, getSiteSourceConfig, isMapReady, isMultiProfileView, pointLookup, profileId, profileVisualsById, themeMode]);
 
@@ -2159,18 +2155,22 @@ function App() {
     const map = mapRef.current;
     if (!map) return;
 
-    if (place.id.startsWith('country-')) {
-      setSelectedMapPlaceId(null);
-      const geo = countryGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=country'));
-      const feature = geo.features.find((item) => item.id === place.id);
-      if (feature && fitMapToFeature(map, feature)) return;
-    }
+    try {
+      if (place.id.startsWith('country-')) {
+        setSelectedMapPlaceId(null);
+        const geo = countryGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=country'));
+        const feature = geo.features.find((item) => item.id === place.id);
+        if (feature && fitMapToFeature(map, feature)) return;
+      }
 
-    if (place.id.startsWith('state-')) {
-      setSelectedMapPlaceId(place.id);
-      const geo = stateGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=state'));
-      const feature = geo.features.find((item) => item.id === place.id);
-      if (feature && fitMapToFeature(map, feature, 60)) return;
+      if (place.id.startsWith('state-')) {
+        setSelectedMapPlaceId(place.id);
+        const geo = stateGeoRef.current ?? (await api<MapFeatureCollection>('/api/places/geojson?type=state'));
+        const feature = geo.features.find((item) => item.id === place.id);
+        if (feature && fitMapToFeature(map, feature, 60)) return;
+      }
+    } catch {
+      setUiError('Could not load map details for that place.');
     }
 
     setSelectedMapPlaceId(place.id);
@@ -2212,7 +2212,13 @@ function App() {
 
   const handleDeleteProfile = async () => {
     if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
-    if (!window.confirm('Delete this profile and all its visits/trip logs?')) return;
+    const ok = await confirm({
+      title: 'Delete profile',
+      message: 'Delete this profile and all its visits and trip logs? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     await api(`/api/profiles/${profileId}`, { method: 'DELETE' });
     await refreshProfiles();
@@ -2249,20 +2255,26 @@ function App() {
   const handleExport = async () => {
     if (typeof profileId !== 'number') return;
 
-    const data = await api(`/api/export?profile_id=${profileId}`);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `world-visited-profile-${profileId}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    try {
+      const data = await api(`/api/export?profile_id=${profileId}`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `world-visited-profile-${profileId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      pushToast('Exported profile data.', 'success');
+    } catch {
+      setUiError('Could not export data.');
+    }
   };
 
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
     if (typeof profileId !== 'number') return;
 
-    const file = event.target.files?.[0];
+    const file = input.files?.[0];
     if (!file) return;
 
     const body = new FormData();
@@ -2273,9 +2285,17 @@ function App() {
       if (!response.ok) {
         throw new Error('Import failed');
       }
+      const summary = (await response.json()) as { imported_visits?: number; imported_trip_logs?: number };
       await refreshVisitsStatsAndTrips(profileId);
+      pushToast(
+        `Imported ${summary.imported_visits ?? 0} visits and ${summary.imported_trip_logs ?? 0} trips.`,
+        'success',
+      );
     } catch {
       setUiError('Could not import data.');
+    } finally {
+      // Reset so selecting the same file again still fires a change event.
+      input.value = '';
     }
   };
 
@@ -2326,7 +2346,13 @@ function App() {
 
   const handleDeleteTripLog = async (tripLogId: number) => {
     if (typeof profileId !== 'number' || !canEditSelectedProfile) return;
-    if (!window.confirm('Delete this trip log?')) return;
+    const ok = await confirm({
+      title: 'Delete trip log',
+      message: 'Delete this trip log?',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       await api(`/api/trip-logs/${tripLogId}`, { method: 'DELETE' });
@@ -2383,7 +2409,13 @@ function App() {
   };
 
   const handleAdminDeleteUser = async (userId: number) => {
-    if (!window.confirm('Delete this user and all of their profiles?')) return;
+    const ok = await confirm({
+      title: 'Delete user',
+      message: 'Delete this user and all of their profiles? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     await api(`/api/admin/users/${userId}`, { method: 'DELETE' });
     await refreshAdminData();
   };
@@ -2400,7 +2432,13 @@ function App() {
   };
 
   const handleAdminDeleteProfile = async (serverProfileId: number) => {
-    if (!window.confirm('Delete this server profile?')) return;
+    const ok = await confirm({
+      title: 'Delete server profile',
+      message: 'Delete this server profile?',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     await api(`/api/admin/profiles/${serverProfileId}`, { method: 'DELETE' });
     await refreshAdminData();
     await refreshProfiles();
@@ -2458,10 +2496,13 @@ function App() {
 
   const handleAdminMigrateDatabase = async () => {
     if (!adminSettings || isAdminMigrationSubmitting) return;
-    if (!window.confirm(`Migrate all application data into ${adminSettings.preferred_db_backend}? This overwrites data in the target database.`)) {
-      return;
-    }
-    setUiError(null);
+    const ok = await confirm({
+      title: 'Migrate database',
+      message: `Migrate all application data into ${adminSettings.preferred_db_backend}? This overwrites data in the target database.`,
+      confirmLabel: 'Migrate',
+      destructive: true,
+    });
+    if (!ok) return;
     setIsAdminMigrationSubmitting(true);
     try {
       const updated = await api<AppSettings & { migration_summary?: Record<string, number | string> }>('/api/admin/settings/migrate', {
@@ -2473,8 +2514,9 @@ function App() {
       await refreshAuthSession();
       const summary = updated.migration_summary;
       if (summary) {
-        window.alert(
+        pushToast(
           `Migration complete to ${summary.target_backend}. Copied ${summary.users} users, ${summary.profiles} profiles, ${summary.visits} visits, and ${summary.trip_logs} trip logs. Restart the server to switch backends.`,
+          'success',
         );
       }
     } catch (error) {
@@ -2742,6 +2784,67 @@ function App() {
               ))}
             </div>
           )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPlaceDetailPanel = (place: Place) => {
+    const isAirport = place.id.startsWith('airport-');
+    const countryName = countryNameByCode.get((place.country_code ?? '').toUpperCase());
+    const rows: Array<{ label: string; value: string | null }> = [
+      { label: 'Country', value: countryName ?? place.country_code ?? null },
+      { label: 'Region', value: place.state_code ?? place.region ?? null },
+      { label: isAirport ? 'Municipality' : 'Locality', value: place.municipality ?? place.cityOrLocality ?? null },
+      { label: 'Airport code', value: isAirport ? place.airport_code ?? null : null },
+      { label: 'Time zone', value: place.timezone ?? null },
+      {
+        label: 'Population',
+        value: typeof place.population === 'number' ? place.population.toLocaleString() : null,
+      },
+      {
+        label: 'Elevation',
+        value:
+          typeof place.elevation_m === 'number'
+            ? measurementSystem === 'metric'
+              ? `${Math.round(place.elevation_m).toLocaleString()} m`
+              : `${Math.round(place.elevation_m * 3.28084).toLocaleString()} ft`
+            : null,
+      },
+    ];
+    const canToggle = typeof profileId === 'number' && canEditSelectedProfile;
+    const isVisited = visitedIds.has(place.id);
+    return (
+      <div className="detail-panel detail-panel--place">
+        <div className="panel-header">
+          <div>
+            <h3>{place.name}</h3>
+            <p>{isAirport ? 'Airport' : 'City'}</p>
+          </div>
+          <button type="button" onClick={() => setSelectedMapPlaceId(null)}>
+            Close
+          </button>
+        </div>
+        <div className="place-detail-card">
+          <div className="place-detail-grid">
+            {rows
+              .filter((row) => row.value)
+              .map((row) => (
+                <div key={row.label} className="place-detail-grid__item">
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+          </div>
+          <button
+            type="button"
+            className={isVisited ? 'button-secondary' : 'button-primary'}
+            disabled={!canToggle}
+            title={canToggle ? undefined : 'Switch to a profile you own to track visits'}
+            onClick={() => onToggleVisit(place)}
+          >
+            {isVisited ? 'Mark as not visited' : 'Mark as visited'}
+          </button>
         </div>
       </div>
     );
@@ -3457,40 +3560,41 @@ function App() {
         </div>
       )}
 
-      {showLoginModal && !authSession?.authenticated && (
-        <div className="first-run-modal">
-          <div className="first-run-card">
-            <h2>Log in</h2>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleLocalLogin();
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Username"
-                value={loginUsername}
-                onChange={(event) => setLoginUsername(event.target.value)}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-              />
-              <div className="modal-actions">
-                <button type="submit" disabled={isAuthSubmitting}>
-                  {isAuthSubmitting ? 'Signing in...' : 'Log in'}
-                </button>
-                <button type="button" onClick={() => setShowLoginModal(false)} disabled={isAuthSubmitting}>
-                  Cancel
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={showLoginModal && !authSession?.authenticated}
+        onClose={() => setShowLoginModal(false)}
+        className="first-run-card"
+        ariaLabel="Log in"
+      >
+        <h2>Log in</h2>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleLocalLogin();
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Username"
+            value={loginUsername}
+            onChange={(event) => setLoginUsername(event.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={loginPassword}
+            onChange={(event) => setLoginPassword(event.target.value)}
+          />
+          <div className="modal-actions">
+            <button type="submit" disabled={isAuthSubmitting}>
+              {isAuthSubmitting ? 'Signing in...' : 'Log in'}
+            </button>
+            <button type="button" onClick={() => setShowLoginModal(false)} disabled={isAuthSubmitting}>
+              Cancel
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       {showFirstProfilePrompt && (
         <div className="first-run-modal">
@@ -3534,99 +3638,100 @@ function App() {
         </div>
       )}
 
-      {showCreateProfileModal && (
-        <div className="first-run-modal">
-          <div className="first-run-card">
-            <h2>Create profile</h2>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleCreateProfile();
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Profile name"
-                value={newProfileName}
-                onChange={(event) => setNewProfileName(event.target.value)}
-              />
-              <select value={newProfileHomeCountryCode} onChange={(event) => setNewProfileHomeCountryCode(event.target.value)}>
-                <option value="">Home country</option>
-                {sortedPlaces.country.map((country) => (
-                  <option key={`new-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
-                    {country.name}
-                  </option>
-                ))}
-              </select>
-              {renderProfileColorField(newProfileColor, setNewProfileColor)}
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={newProfilePublic}
-                  onChange={(event) => setNewProfilePublic(event.target.checked)}
-                />
-                Share this profile publicly
-              </label>
-              <div className="modal-actions">
-                <button type="submit" disabled={isProfileSubmitting}>
-                  {isProfileSubmitting ? 'Creating...' : 'Create'}
-                </button>
-                <button type="button" onClick={() => setShowCreateProfileModal(false)} disabled={isProfileSubmitting}>
-                  Cancel
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={showCreateProfileModal}
+        onClose={() => setShowCreateProfileModal(false)}
+        className="first-run-card"
+        ariaLabel="Create profile"
+      >
+        <h2>Create profile</h2>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreateProfile();
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Profile name"
+            value={newProfileName}
+            onChange={(event) => setNewProfileName(event.target.value)}
+          />
+          <select value={newProfileHomeCountryCode} onChange={(event) => setNewProfileHomeCountryCode(event.target.value)}>
+            <option value="">Home country</option>
+            {sortedPlaces.country.map((country) => (
+              <option key={`new-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                {country.name}
+              </option>
+            ))}
+          </select>
+          {renderProfileColorField(newProfileColor, setNewProfileColor)}
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={newProfilePublic}
+              onChange={(event) => setNewProfilePublic(event.target.checked)}
+            />
+            Share this profile publicly
+          </label>
+          <div className="modal-actions">
+            <button type="submit" disabled={isProfileSubmitting}>
+              {isProfileSubmitting ? 'Creating...' : 'Create'}
+            </button>
+            <button type="button" onClick={() => setShowCreateProfileModal(false)} disabled={isProfileSubmitting}>
+              Cancel
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {showEditProfileModal && selectedProfile && (
-        <div className="first-run-modal">
-          <div className="first-run-card">
-            <h2>Edit profile</h2>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleSaveProfileEdits();
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Profile name"
-                value={editProfileName}
-                onChange={(event) => setEditProfileName(event.target.value)}
-              />
-              <select value={selectedProfileHomeCountryCode} onChange={(event) => setSelectedProfileHomeCountryCode(event.target.value)}>
-                <option value="">Home country</option>
-                {sortedPlaces.country.map((country) => (
-                  <option key={`edit-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
-                    {country.name}
-                  </option>
-                ))}
-              </select>
-              {renderProfileColorField(selectedProfileColor, setSelectedProfileColor)}
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={selectedProfilePublic}
-                  onChange={(event) => setSelectedProfilePublic(event.target.checked)}
-                />
-                Share this profile publicly
-              </label>
-              <div className="modal-actions">
-                <button type="submit" disabled={isProfileSubmitting}>
-                  {isProfileSubmitting ? 'Saving...' : 'Save'}
-                </button>
-                <button type="button" onClick={() => setShowEditProfileModal(false)} disabled={isProfileSubmitting}>
-                  Cancel
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={showEditProfileModal && Boolean(selectedProfile)}
+        onClose={() => setShowEditProfileModal(false)}
+        className="first-run-card"
+        ariaLabel="Edit profile"
+      >
+        <h2>Edit profile</h2>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSaveProfileEdits();
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Profile name"
+            value={editProfileName}
+            onChange={(event) => setEditProfileName(event.target.value)}
+          />
+          <select value={selectedProfileHomeCountryCode} onChange={(event) => setSelectedProfileHomeCountryCode(event.target.value)}>
+            <option value="">Home country</option>
+            {sortedPlaces.country.map((country) => (
+              <option key={`edit-profile-home-${country.id}`} value={(country.country_code ?? '').toUpperCase()}>
+                {country.name}
+              </option>
+            ))}
+          </select>
+          {renderProfileColorField(selectedProfileColor, setSelectedProfileColor)}
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={selectedProfilePublic}
+              onChange={(event) => setSelectedProfilePublic(event.target.checked)}
+            />
+            Share this profile publicly
+          </label>
+          <div className="modal-actions">
+            <button type="submit" disabled={isProfileSubmitting}>
+              {isProfileSubmitting ? 'Saving...' : 'Save'}
+            </button>
+            <button type="button" onClick={() => setShowEditProfileModal(false)} disabled={isProfileSubmitting}>
+              Cancel
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {uiError && <div className="ui-error">{uiError}</div>}
 
       <header className="header">
         <div className="brand-panel">
@@ -3678,37 +3783,32 @@ function App() {
                   value={profileId ?? ''}
                   onChange={(event) => {
                     const value = event.target.value;
-                    if (value === '__create__') {
-                      openCreateProfileModal();
-                    } else if (!value) {
+                    if (!value) {
                       setProfileId(null);
                     } else {
                       setProfileId(Number(value));
                     }
                   }}
                 >
-                  {authSession?.authenticated && <option value="__create__">+ Create profile</option>}
                   <option value="">Demo mode</option>
                   {ownedProfiles.length > 0 && (
-                    <option value="" disabled>
-                      Your profiles
-                    </option>
+                    <optgroup label="Your profiles">
+                      {ownedProfiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   )}
-                  {ownedProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name}
-                    </option>
-                  ))}
                   {publicProfiles.length > 0 && (
-                    <option value="" disabled>
-                      ----------
-                    </option>
+                    <optgroup label="Public profiles">
+                      {publicProfiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   )}
-                  {publicProfiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.name} (Public)
-                    </option>
-                  ))}
                 </select>
                 <small>Choose the active atlas view</small>
               </label>
@@ -3736,16 +3836,39 @@ function App() {
             </div>
 
             <div className="profile-actions">
-              <button type="button" onClick={handleEditProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
+              {authSession?.authenticated && (
+                <button type="button" onClick={openCreateProfileModal}>
+                  New profile
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleEditProfile}
+                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+                title={canEditSelectedProfile ? undefined : 'Switch to a profile you own to edit it'}
+              >
                 Edit
               </button>
-              <button type="button" onClick={handleDeleteProfile} disabled={typeof profileId !== 'number' || !canEditSelectedProfile}>
+              <button
+                type="button"
+                onClick={handleDeleteProfile}
+                disabled={typeof profileId !== 'number' || !canEditSelectedProfile}
+                title={canEditSelectedProfile ? undefined : 'Switch to a profile you own to delete it'}
+              >
                 Delete
               </button>
-              <button type="button" onClick={handleExport} disabled={typeof profileId !== 'number'}>
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={typeof profileId !== 'number'}
+                title={typeof profileId === 'number' ? undefined : 'Select a profile to export its data'}
+              >
                 Export JSON
               </button>
-              <label className="import-label">
+              <label
+                className="import-label"
+                title={typeof profileId === 'number' && canEditSelectedProfile ? undefined : 'Switch to a profile you own to import data'}
+              >
                 Import JSON
                 <input
                   type="file"
@@ -3985,7 +4108,14 @@ function App() {
             <ul className="list">
               {visiblePlaces.map((place) => (
                 <li key={place.id} className={`place-card place-card--${activeTab}${visitedIds.has(place.id) ? ' place-card--visited' : ''}`}>
-                  <label className={`place-card__label${activeTab === 'city' ? ' place-card__label--compact' : ''}`}>
+                  <label
+                    className={`place-card__label${activeTab === 'city' ? ' place-card__label--compact' : ''}`}
+                    title={
+                      typeof profileId === 'number' && canEditSelectedProfile
+                        ? undefined
+                        : 'Switch to a profile you own to track visits'
+                    }
+                  >
                     <input
                       type="checkbox"
                       checked={visitedIds.has(place.id)}
@@ -4079,6 +4209,10 @@ function App() {
 
           <div ref={mapContainerRef} className={`map ${mainView === 'map' ? '' : 'map-hidden'}`} />
           {mainView === 'map' && selectedMapPlace?.id.startsWith('site-') && renderSiteDetailPanel(selectedMapPlace)}
+          {mainView === 'map' &&
+            selectedMapPlace &&
+            (selectedMapPlace.id.startsWith('city-') || selectedMapPlace.id.startsWith('airport-')) &&
+            renderPlaceDetailPanel(selectedMapPlace)}
 
           {mainView === 'trips' && (
             <div className="detail-panel">
@@ -4100,18 +4234,18 @@ function App() {
               {showTripForm && (
                 <div className="trip-form">
                   <datalist id="airport-options-origin">
-                    {airportAutocomplete(tripForm.origin_query).map((airport) => (
+                    {originAirportOptions.map((airport) => (
                       <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
                     ))}
                   </datalist>
                   <datalist id="airport-options-destination">
-                    {airportAutocomplete(tripForm.destination_query).map((airport) => (
+                    {destinationAirportOptions.map((airport) => (
                       <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
                     ))}
                   </datalist>
                   {tripForm.layover_queries.map((query, index) => (
                     <datalist id={`airport-options-layover-${index}`} key={`airport-options-${index}`}>
-                      {airportAutocomplete(query).map((airport) => (
+                      {(layoverAirportOptions[index] ?? []).map((airport) => (
                         <option key={airport.id} value={airportLabelById.get(airport.id) ?? ''} />
                       ))}
                     </datalist>
@@ -4363,22 +4497,23 @@ function App() {
         </main>
       </div>
 
-      {showSettingsOverlay && (
-        <div className="first-run-modal settings-modal">
-          <div className="first-run-card settings-card">
-            <div className="settings-card__header">
-              <div>
-                <h2>Settings</h2>
-                <p>Account, application, and server configuration.</p>
-              </div>
-              <button type="button" onClick={() => setShowSettingsOverlay(false)}>
-                Close
-              </button>
-            </div>
-            <div className="settings-card__body">{renderSettingsBody()}</div>
+      <Modal
+        open={showSettingsOverlay}
+        onClose={() => setShowSettingsOverlay(false)}
+        className="first-run-card settings-card"
+        ariaLabel="Settings"
+      >
+        <div className="settings-card__header">
+          <div>
+            <h2>Settings</h2>
+            <p>Account, application, and server configuration.</p>
           </div>
+          <button type="button" onClick={() => setShowSettingsOverlay(false)}>
+            Close
+          </button>
         </div>
-      )}
+        <div className="settings-card__body">{renderSettingsBody()}</div>
+      </Modal>
     </div>
   );
 }

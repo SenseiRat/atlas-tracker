@@ -1,5 +1,6 @@
 import {
   buildTravelDataContext,
+  classifyTripByCountry,
   type TravelDataContext,
   type TravelPlace,
   type TravelPlacesByType,
@@ -281,10 +282,6 @@ const milestoneResolvers: Record<AchievementMilestoneKey, (context: ExtendedAchi
   first_capital_city: (context) => ({ unlocked: context.data.capitalCitiesVisited > 0 }),
 };
 
-function normalizeCode(value?: string | null) {
-  return String(value || '').trim().toUpperCase();
-}
-
 function maxMapValue(map: Map<number, number>) {
   return map.size > 0 ? Math.max(...Array.from(map.values())) : 0;
 }
@@ -341,15 +338,11 @@ function getTripRoutePlaces(trip: TravelDataContext['datedTrips'][number], conte
 }
 
 function isDomesticTrip(trip: TravelDataContext['datedTrips'][number], context: ExtendedAchievementContext) {
-  const origin = context.placesById.get(trip.origin_place_id);
-  const destination = context.placesById.get(trip.destination_place_id);
-  return Boolean(origin?.country_code && destination?.country_code && normalizeCode(origin.country_code) === normalizeCode(destination.country_code));
+  return classifyTripByCountry(trip, context.placesById) === 'domestic';
 }
 
 function isInternationalTrip(trip: TravelDataContext['datedTrips'][number], context: ExtendedAchievementContext) {
-  const origin = context.placesById.get(trip.origin_place_id);
-  const destination = context.placesById.get(trip.destination_place_id);
-  return Boolean(origin?.country_code && destination?.country_code && normalizeCode(origin.country_code) !== normalizeCode(destination.country_code));
+  return classifyTripByCountry(trip, context.placesById) === 'international';
 }
 
 function tripCrossesBoundary(trip: TravelDataContext['datedTrips'][number], context: ExtendedAchievementContext, axis: 'lat' | 'lon') {

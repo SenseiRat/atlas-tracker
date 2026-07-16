@@ -193,6 +193,9 @@ type TravelStatResult = {
 };
 
 type DerivedContext = {
+  currentYear: number;
+  currentMonth: number;
+  placesById: Map<string, TravelPlace>;
   visitedPlaces: TravelPlace[];
   destinationPlaces: TravelPlace[];
   routeAirportPlaces: TravelPlace[];
@@ -259,8 +262,6 @@ type DerivedContext = {
 
 export type TravelDataContext = DerivedContext;
 
-const CURRENT_YEAR = new Date().getFullYear();
-const CURRENT_MONTH = new Date().getMonth() + 1;
 const KG_CO2E_PER_MILE = 0.24;
 let activeMeasurementSystem: MeasurementSystem = 'imperial';
 
@@ -282,6 +283,25 @@ function normalizeCode(value?: string | null) {
 
 function normalizeName(value?: string | null) {
   return String(value || '').trim().toLowerCase();
+}
+
+type TripEndpoints = { origin_place_id: string; destination_place_id: string };
+
+/**
+ * Classify a trip as domestic/international using the full place catalog.
+ * Resolving via placesById (rather than only route_points-derived airports)
+ * means trips whose origin isn't a catalog route point are still classified.
+ */
+export function classifyTripByCountry(
+  trip: TripEndpoints,
+  placesById: Map<string, TravelPlace>,
+): 'domestic' | 'international' | 'unknown' {
+  const origin = placesById.get(trip.origin_place_id);
+  const destination = placesById.get(trip.destination_place_id);
+  const originCode = normalizeCode(origin?.country_code);
+  const destinationCode = normalizeCode(destination?.country_code);
+  if (!originCode || !destinationCode) return 'unknown';
+  return originCode === destinationCode ? 'domestic' : 'international';
 }
 
 function parseDateKey(value?: string | null) {
@@ -437,7 +457,12 @@ function buildContext(
   visits: TravelVisit[],
   tripLogs: TravelTripLog[],
   homeCountryCode?: string,
+  now: Date = new Date(),
 ): DerivedContext {
+  // Trip dates are anchored to UTC noon (parseDateKey), so derive "now" in UTC
+  // too — otherwise "this month/year" counts drift by one near boundaries.
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
   const placesById = new Map<string, TravelPlace>();
   (Object.values(places) as TravelPlace[][]).forEach((items) => {
     items.forEach((place) => placesById.set(place.id, place));
@@ -585,16 +610,19 @@ function buildContext(
   let longestTrip: { trip: DatedTrip; miles: number; originName: string; destinationName: string } | null = null;
 
   if (homeAirport?.lat !== undefined && homeAirport.lon !== undefined) {
+    // Capture into locals so TS keeps the non-undefined narrowing inside the closures below.
+    const homeLat = homeAirport.lat;
+    const homeLon = homeAirport.lon;
     destinationPlaces.forEach((place) => {
       if (place.id === homeAirport.id || place.lat === undefined || place.lon === undefined) return;
-      const miles = milesBetween(homeAirport.lat, homeAirport.lon, place.lat, place.lon);
+      const miles = milesBetween(homeLat, homeLon, place.lat, place.lon);
       if (!farthestDestinationFromHome || miles > farthestDestinationFromHome.miles) farthestDestinationFromHome = { place, miles };
       if (!closestDestinationToHome || miles < closestDestinationToHome.miles) closestDestinationToHome = { place, miles };
     });
     datedTrips.forEach((trip) => {
       const place = placesById.get(trip.destination_place_id);
       if (!place || place.lat === undefined || place.lon === undefined) return;
-      const miles = milesBetween(homeAirport.lat, homeAirport.lon, place.lat, place.lon);
+      const miles = milesBetween(homeLat, homeLon, place.lat, place.lon);
       if (!farthestTripFromHome || miles > farthestTripFromHome.miles) {
         farthestTripFromHome = { trip, miles, place };
       }
@@ -637,7 +665,7 @@ function buildContext(
     totalFlightLegs += Math.max(1, segments.length || 1);
     totalDistanceMiles += trip.estimated_miles;
     totalGreatCircleMiles += segments.reduce((sum, segment) => sum + (segment.miles || 0), 0);
-    if (trip.date.getUTCFullYear() === CURRENT_YEAR) totalDistanceMilesThisYear += trip.estimated_miles;
+    if (trip.date.getUTCFullYear() === currentYear) totalDistanceMilesThisYear += trip.estimated_miles;
 
     const tripCountryCodes = new Set<string>();
     const offsets: number[] = [];
@@ -743,7 +771,7 @@ function buildContext(
   const newDestinationPercent =
     uniqueDestinationGroups ? ((uniqueDestinationGroups - repeatDestinationGroups) / uniqueDestinationGroups) * 100 : null;
   const newPlacesThisYear = destinationFirstSeenByPlaceId.size
-    ? Array.from(destinationFirstSeenByPlaceId.values()).filter((dateKey) => dateKey.startsWith(`${CURRENT_YEAR}-`)).length
+    ? Array.from(destinationFirstSeenByPlaceId.values()).filter((dateKey) => dateKey.startsWith(`${currentYear}-`)).length
     : null;
 
   const countryRevisitCounts = new Map<string, number>();
@@ -764,6 +792,9 @@ function buildContext(
     .sort();
 
   return {
+    currentYear,
+    currentMonth,
+    placesById,
     visitedPlaces,
     destinationPlaces,
     routeAirportPlaces,
@@ -829,8 +860,9 @@ export function buildTravelDataContext(args: {
   visits: TravelVisit[];
   tripLogs: TravelTripLog[];
   homeCountryCode?: string;
+  now?: Date;
 }): TravelDataContext {
-  return buildContext(args.places, args.visits, args.tripLogs, args.homeCountryCode);
+  return buildContext(args.places, args.visits, args.tripLogs, args.homeCountryCode, args.now);
 }
 
 const calculators: Record<TravelStatSelector, (context: DerivedContext) => TravelStatResult | null> = {
@@ -872,20 +904,12 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
   domestic_trips: (context) =>
     makeCountResult(
       'Number of domestic trips',
-      context.datedTrips.filter((trip) => {
-        const origin = context.routeAirportPlaces.find((place) => place.id === trip.origin_place_id);
-        const destination = context.destinationPlaces.find((place) => place.id === trip.destination_place_id);
-        return Boolean(origin?.country_code && destination?.country_code && normalizeCode(origin.country_code) === normalizeCode(destination.country_code));
-      }).length,
+      context.datedTrips.filter((trip) => classifyTripByCountry(trip, context.placesById) === 'domestic').length,
     ),
   international_trips: (context) =>
     makeCountResult(
       'Number of international trips',
-      context.datedTrips.filter((trip) => {
-        const origin = context.routeAirportPlaces.find((place) => place.id === trip.origin_place_id);
-        const destination = context.destinationPlaces.find((place) => place.id === trip.destination_place_id);
-        return Boolean(origin?.country_code && destination?.country_code && normalizeCode(origin.country_code) !== normalizeCode(destination.country_code));
-      }).length,
+      context.datedTrips.filter((trip) => classifyTripByCountry(trip, context.placesById) === 'international').length,
     ),
   total_distance: (context) => makeMilesResult('Total distance traveled', context.totalDistanceMiles),
   flights_taken: (context) => makeCountResult('Number of flights taken', context.totalFlightLegs),
@@ -911,7 +935,7 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
   new_places_this_year: (context) =>
     context.newPlacesThisYear === null
       ? null
-      : { displayValue: formatCount(context.newPlacesThisYear), detail: `first seen in ${CURRENT_YEAR}`, sentence: `${formatCount(context.newPlacesThisYear)} places appear for the first time in ${CURRENT_YEAR}.` },
+      : { displayValue: formatCount(context.newPlacesThisYear), detail: `first seen in ${context.currentYear}`, sentence: `${formatCount(context.newPlacesThisYear)} places appear for the first time in ${context.currentYear}.` },
   largest_timezone_jump: (context) =>
     !context.largestTimezoneJump
       ? null
@@ -937,18 +961,20 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
       : { displayValue: formatCount(context.maxCountriesInTrip.count), detail: context.maxCountriesInTrip.detail, sentence: `Your widest single trip crossed ${formatCount(context.maxCountriesInTrip.count)} countries on ${context.maxCountriesInTrip.detail}.` },
   border_crossings: (context) => makeCountResult('Number of border crossings', context.borderCrossingsByAir),
   airports_visited: (context) => makeCountResult('Number of airports visited', context.airportsVisited),
-  travel_days_in_transit: (context) => makeDaysResult('Number of total travel days in transit', context.uniqueTripDateKeys.length),
+  // Distinct from total_days_traveled (unique calendar days): this counts every
+  // logged trip leg, so two trips on one day count as two transit days.
+  travel_days_in_transit: (context) => makeDaysResult('Number of total travel days in transit', context.datedTrips.length),
   great_circle_distance: (context) => makeMilesResult('Great-circle distance traveled', context.totalGreatCircleMiles),
   estimated_co2: (context) => ({ displayValue: `${Math.round(context.totalDistanceMiles * KG_CO2E_PER_MILE).toLocaleString()} kg CO2e`, detail: 'using a fixed per-mile flight estimate', sentence: `Estimated flight emissions total ${Math.round(context.totalDistanceMiles * KG_CO2E_PER_MILE).toLocaleString()} kg CO2e using a fixed per-mile estimate.` }),
-  trips_this_year: (context) => makeCountResult('Trips this year', context.datedTrips.filter((trip) => trip.date.getUTCFullYear() === CURRENT_YEAR).length),
-  trips_this_month: (context) => makeCountResult('Trips this month', context.datedTrips.filter((trip) => trip.date.getUTCFullYear() === CURRENT_YEAR && trip.date.getUTCMonth() + 1 === CURRENT_MONTH).length),
-  days_traveled_this_year: (context) => makeDaysResult('Days traveled this year', context.travelDaysByYear.get(CURRENT_YEAR) ?? 0),
+  trips_this_year: (context) => makeCountResult('Trips this year', context.datedTrips.filter((trip) => trip.date.getUTCFullYear() === context.currentYear).length),
+  trips_this_month: (context) => makeCountResult('Trips this month', context.datedTrips.filter((trip) => trip.date.getUTCFullYear() === context.currentYear && trip.date.getUTCMonth() + 1 === context.currentMonth).length),
+  days_traveled_this_year: (context) => makeDaysResult('Days traveled this year', context.travelDaysByYear.get(context.currentYear) ?? 0),
   years_with_trip: (context) => makeCountResult('Years with at least one trip', context.tripYears.size),
   current_travel_streak_by_year: (context) => {
     if (context.tripYears.size === 0) return null;
     const years = new Set(context.tripYears.keys());
-    let streak = years.has(CURRENT_YEAR) ? 1 : 0;
-    let cursor = CURRENT_YEAR - 1;
+    let streak = years.has(context.currentYear) ? 1 : 0;
+    let cursor = context.currentYear - 1;
     while (streak > 0 && years.has(cursor)) {
       streak += 1;
       cursor -= 1;
@@ -1096,11 +1122,11 @@ const expandableDefinitions: TravelStatDefinition[] = [
   ['sites_michelin_first', 'First Michelin-starred restaurant visit date', 'sites_lists', 4, 'first_michelin_visit_date'],
   ['sites_michelin_latest', 'Latest Michelin-starred restaurant visit date', 'sites_lists', 5, 'latest_michelin_visit_date'],
 ].map(([id, label, section, priority, selector]) => ({
-  id,
-  label,
+  id: id as string,
+  label: label as string,
   section: section as TravelStatSection,
   priority: priority as number,
-  description: label,
+  description: label as string,
   selector: selector as TravelStatSelector,
   visibilityTier: 'expandable' as const,
 }));
@@ -1128,7 +1154,7 @@ export function buildTravelStatsModel(args: {
     activeMeasurementSystem = args.measurementSystem === 'metric' ? 'metric' : 'imperial';
     const context = buildTravelDataContext(args);
     const evaluated = registry
-      .map((definition) => {
+      .map((definition): EvaluatedTravelStat | null => {
         try {
           const result = calculators[definition.selector](context);
           if (!result) return null;
@@ -1138,7 +1164,7 @@ export function buildTravelStatsModel(args: {
           return null;
         }
       })
-      .filter((item): item is EvaluatedTravelStat => Boolean(item));
+      .filter((item): item is EvaluatedTravelStat => item !== null);
 
     return {
       heroStats: evaluated.filter((stat) => stat.visibilityTier === 'hero').sort((a, b) => a.priority - b.priority),
