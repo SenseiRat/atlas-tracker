@@ -19,7 +19,8 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -29,18 +30,25 @@ from server.app.config import *  # noqa: F401,F403
 from server.app.db import *  # noqa: F401,F403
 from server.app.helpers import *  # noqa: F401,F403
 
+
 def _active_place_join_sql(place_alias: str = "places", state_alias: str = "pss") -> str:
-    return f"LEFT JOIN place_source_state {state_alias} ON {state_alias}.place_id = {place_alias}.id"
+    return (
+        f"LEFT JOIN place_source_state {state_alias} ON {state_alias}.place_id = {place_alias}.id"
+    )
+
 
 def _active_place_filter_sql(state_alias: str = "pss") -> str:
     return f"({state_alias}.place_id IS NULL OR {state_alias}.is_active = ?)"
 
-def count_by_type(conn: DBConnection, place_type: str, visited_ids: List[str], *, active_only: bool = True) -> int:
+
+def count_by_type(
+    conn: DBConnection, place_type: str, visited_ids: list[str], *, active_only: bool = True
+) -> int:
     if not visited_ids:
         return 0
     placeholders = ",".join("?" for _ in visited_ids)
     query = f"SELECT COUNT(*) as count FROM places WHERE type = ? AND id IN ({placeholders})"
-    params: List[Any] = [place_type, *visited_ids]
+    params: list[Any] = [place_type, *visited_ids]
     if active_only:
         query = (
             "SELECT COUNT(*) as count "
@@ -49,6 +57,7 @@ def count_by_type(conn: DBConnection, place_type: str, visited_ids: List[str], *
         )
         params.append(True)
     return conn.execute(query, params).fetchone()["count"]
+
 
 def get_place_by_id(conn: DBConnection, place_id: str) -> Any:
     place = conn.execute(
@@ -61,6 +70,7 @@ def get_place_by_id(conn: DBConnection, place_id: str) -> Any:
         raise HTTPException(status_code=400, detail=f"Place missing coordinates: {place_id}")
     return place
 
+
 def miles_between_points(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius_miles = 3958.8
     d_lat = math.radians(lat2 - lat1)
@@ -72,7 +82,8 @@ def miles_between_points(lat1: float, lon1: float, lat2: float, lon2: float) -> 
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return radius_miles * c
 
-def _parse_layover_place_ids(raw: Any) -> List[str]:
+
+def _parse_layover_place_ids(raw: Any) -> list[str]:
     """Normalize layover ids that may be a list or the DB's JSON-string form."""
     if isinstance(raw, str):
         try:
@@ -83,9 +94,10 @@ def _parse_layover_place_ids(raw: Any) -> List[str]:
         return []
     return [str(item).strip() for item in raw if str(item).strip()]
 
-def build_trip_log_payload(conn: DBConnection, row: Any) -> Dict[str, Any]:
+
+def build_trip_log_payload(conn: DBConnection, row: Any) -> dict[str, Any]:
     layover_ids = _parse_layover_place_ids(row["layover_place_ids"])
-    route_ids: List[str] = [row["origin_place_id"], *layover_ids, row["destination_place_id"]]
+    route_ids: list[str] = [row["origin_place_id"], *layover_ids, row["destination_place_id"]]
     placeholders = ",".join("?" for _ in route_ids)
     place_rows = conn.execute(
         f"SELECT id, name, lat, lon, country_code FROM places WHERE id IN ({placeholders})",
@@ -93,7 +105,7 @@ def build_trip_log_payload(conn: DBConnection, row: Any) -> Dict[str, Any]:
     ).fetchall()
     places_by_id = {place["id"]: place for place in place_rows}
 
-    route_points: List[Dict[str, Any]] = []
+    route_points: list[dict[str, Any]] = []
     for place_id in route_ids:
         place = places_by_id.get(place_id)
         if not place:
@@ -108,7 +120,7 @@ def build_trip_log_payload(conn: DBConnection, row: Any) -> Dict[str, Any]:
             }
         )
 
-    segments: List[Dict[str, Any]] = []
+    segments: list[dict[str, Any]] = []
     for index in range(1, len(route_points)):
         start = route_points[index - 1]
         end = route_points[index]
@@ -136,8 +148,9 @@ def build_trip_log_payload(conn: DBConnection, row: Any) -> Dict[str, Any]:
         "segments": segments,
     }
 
-def _total_place_counts(conn: DBConnection) -> Dict[str, int]:
-    totals: Dict[str, int] = {}
+
+def _total_place_counts(conn: DBConnection) -> dict[str, int]:
+    totals: dict[str, int] = {}
     for place_type in ("country", "state", "city", "airport", "site"):
         totals[place_type] = int(
             conn.execute(
@@ -149,6 +162,7 @@ def _total_place_counts(conn: DBConnection) -> Dict[str, int]:
         )
     return totals
 
+
 def _total_continent_count(conn: DBConnection) -> int:
     continent_rows = conn.execute(
         "SELECT data "
@@ -156,14 +170,17 @@ def _total_continent_count(conn: DBConnection) -> int:
         f"WHERE places.type = 'country' AND {_active_place_filter_sql()}",
         (True,),
     ).fetchall()
-    continents: Set[str] = set()
+    continents: set[str] = set()
     for row in continent_rows:
         continent = get_continent_from_country_data(row["data"])
         if continent:
             continents.add(continent)
     return len(continents)
 
-def _visited_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_id: Optional[int]) -> List[Any]:
+
+def _visited_rows_for_profile(
+    conn: DBConnection, profile_id: int | None, user_id: int | None
+) -> list[Any]:
     if profile_id is None:
         filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
         return conn.execute(
@@ -175,9 +192,14 @@ def _visited_rows_for_profile(conn: DBConnection, profile_id: Optional[int], use
             """,
             filter_params,
         ).fetchall()
-    return conn.execute("SELECT place_id FROM visits WHERE profile_id = ?", (profile_id,)).fetchall()
+    return conn.execute(
+        "SELECT place_id FROM visits WHERE profile_id = ?", (profile_id,)
+    ).fetchall()
 
-def _trip_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_id: Optional[int]) -> List[Any]:
+
+def _trip_rows_for_profile(
+    conn: DBConnection, profile_id: int | None, user_id: int | None
+) -> list[Any]:
     if profile_id is None:
         filter_sql, filter_params = _accessible_profile_filter_sql("p", user_id)
         return conn.execute(
@@ -199,12 +221,15 @@ def _trip_rows_for_profile(conn: DBConnection, profile_id: Optional[int], user_i
         (profile_id,),
     ).fetchall()
 
-def _place_rows_by_ids(conn: DBConnection, place_ids: List[str], *, active_only: bool = False) -> List[Any]:
+
+def _place_rows_by_ids(
+    conn: DBConnection, place_ids: list[str], *, active_only: bool = False
+) -> list[Any]:
     if not place_ids:
         return []
     placeholders = ",".join("?" for _ in place_ids)
     query = f"SELECT id, name, type, lat, lon, country_code, data FROM places WHERE id IN ({placeholders})"
-    params: List[Any] = list(place_ids)
+    params: list[Any] = list(place_ids)
     if active_only:
         query = (
             "SELECT places.id, places.name, places.type, places.lat, places.lon, places.country_code, places.data "
@@ -214,26 +239,139 @@ def _place_rows_by_ids(conn: DBConnection, place_ids: List[str], *, active_only:
         params.append(True)
     return conn.execute(query, params).fetchall()
 
-def _build_achievements(context: Dict[str, Any]) -> Dict[str, Any]:
+
+def _build_achievements(context: dict[str, Any]) -> dict[str, Any]:
     site_categories = context["site_categories"]
     heritage_visited = int(site_categories.get("heritage", {}).get("visited", 0))
     achievements = [
-        {"id": "first_country", "title": "First Stamp", "description": "Visit your first country.", "category": "coverage", "current": int(context["visited_countries"]), "target": 1, "points": 10},
-        {"id": "continent_hopper", "title": "Continent Hopper", "description": "Reach three continents.", "category": "coverage", "current": int(context["visited_continents"]), "target": 3, "points": 18},
-        {"id": "global_six", "title": "Global Six", "description": "Visit all six inhabited continents in the dataset.", "category": "coverage", "current": int(context["visited_continents"]), "target": min(6, int(context["total_continents"])), "points": 35},
-        {"id": "regional_runner", "title": "Regional Runner", "description": "Log visits to ten states or regions.", "category": "coverage", "current": int(context["visited_states"]), "target": 10, "points": 14},
-        {"id": "city_collector", "title": "City Collector", "description": "Visit twenty-five cities.", "category": "coverage", "current": int(context["visited_cities"]), "target": 25, "points": 14},
-        {"id": "jetsetter", "title": "Jet Setter", "description": "Check into ten airports.", "category": "travel", "current": int(context["visited_airports"]), "target": 10, "points": 12},
-        {"id": "trip_logger", "title": "Trip Logger", "description": "Record ten trip logs.", "category": "travel", "current": int(context["trip_count"]), "target": 10, "points": 12},
-        {"id": "marathon_miles", "title": "Marathon Miles", "description": "Accumulate 25,000 estimated flight miles.", "category": "travel", "current": int(round(context["total_estimated_miles"])), "target": 25000, "points": 24},
-        {"id": "timezone_tracker", "title": "Timezone Tracker", "description": "Visit twelve time zones.", "category": "travel", "current": int(context["timezones_visited"]), "target": 12, "points": 18},
-        {"id": "north_south", "title": "Hemisphere Crosser", "description": "Reach both the northern and southern hemispheres.", "category": "geography", "current": 1 if context["north_south_overlap"] else 0, "target": 1, "points": 16},
-        {"id": "east_west", "title": "Meridian Breaker", "description": "Reach both the eastern and western hemispheres.", "category": "geography", "current": 1 if context["east_west_overlap"] else 0, "target": 1, "points": 16},
-        {"id": "quadrant_master", "title": "Quadrant Master", "description": "Visit all four world quadrants.", "category": "geography", "current": 1 if context["all_four_quadrants"] else 0, "target": 1, "points": 28},
-        {"id": "summit_seeker", "title": "Summit Seeker", "description": "Visit a place at or above 2,500 meters.", "category": "geography", "current": int(round(max(0.0, context["highest_elevation_value"]))), "target": 2500, "points": 18},
-        {"id": "heritage_hunter", "title": "Heritage Hunter", "description": "Visit five heritage-category sites.", "category": "lists", "current": heritage_visited, "target": 5, "points": 18},
+        {
+            "id": "first_country",
+            "title": "First Stamp",
+            "description": "Visit your first country.",
+            "category": "coverage",
+            "current": int(context["visited_countries"]),
+            "target": 1,
+            "points": 10,
+        },
+        {
+            "id": "continent_hopper",
+            "title": "Continent Hopper",
+            "description": "Reach three continents.",
+            "category": "coverage",
+            "current": int(context["visited_continents"]),
+            "target": 3,
+            "points": 18,
+        },
+        {
+            "id": "global_six",
+            "title": "Global Six",
+            "description": "Visit all six inhabited continents in the dataset.",
+            "category": "coverage",
+            "current": int(context["visited_continents"]),
+            "target": min(6, int(context["total_continents"])),
+            "points": 35,
+        },
+        {
+            "id": "regional_runner",
+            "title": "Regional Runner",
+            "description": "Log visits to ten states or regions.",
+            "category": "coverage",
+            "current": int(context["visited_states"]),
+            "target": 10,
+            "points": 14,
+        },
+        {
+            "id": "city_collector",
+            "title": "City Collector",
+            "description": "Visit twenty-five cities.",
+            "category": "coverage",
+            "current": int(context["visited_cities"]),
+            "target": 25,
+            "points": 14,
+        },
+        {
+            "id": "jetsetter",
+            "title": "Jet Setter",
+            "description": "Check into ten airports.",
+            "category": "travel",
+            "current": int(context["visited_airports"]),
+            "target": 10,
+            "points": 12,
+        },
+        {
+            "id": "trip_logger",
+            "title": "Trip Logger",
+            "description": "Record ten trip logs.",
+            "category": "travel",
+            "current": int(context["trip_count"]),
+            "target": 10,
+            "points": 12,
+        },
+        {
+            "id": "marathon_miles",
+            "title": "Marathon Miles",
+            "description": "Accumulate 25,000 estimated flight miles.",
+            "category": "travel",
+            "current": int(round(context["total_estimated_miles"])),
+            "target": 25000,
+            "points": 24,
+        },
+        {
+            "id": "timezone_tracker",
+            "title": "Timezone Tracker",
+            "description": "Visit twelve time zones.",
+            "category": "travel",
+            "current": int(context["timezones_visited"]),
+            "target": 12,
+            "points": 18,
+        },
+        {
+            "id": "north_south",
+            "title": "Hemisphere Crosser",
+            "description": "Reach both the northern and southern hemispheres.",
+            "category": "geography",
+            "current": 1 if context["north_south_overlap"] else 0,
+            "target": 1,
+            "points": 16,
+        },
+        {
+            "id": "east_west",
+            "title": "Meridian Breaker",
+            "description": "Reach both the eastern and western hemispheres.",
+            "category": "geography",
+            "current": 1 if context["east_west_overlap"] else 0,
+            "target": 1,
+            "points": 16,
+        },
+        {
+            "id": "quadrant_master",
+            "title": "Quadrant Master",
+            "description": "Visit all four world quadrants.",
+            "category": "geography",
+            "current": 1 if context["all_four_quadrants"] else 0,
+            "target": 1,
+            "points": 28,
+        },
+        {
+            "id": "summit_seeker",
+            "title": "Summit Seeker",
+            "description": "Visit a place at or above 2,500 meters.",
+            "category": "geography",
+            "current": int(round(max(0.0, context["highest_elevation_value"]))),
+            "target": 2500,
+            "points": 18,
+        },
+        {
+            "id": "heritage_hunter",
+            "title": "Heritage Hunter",
+            "description": "Visit five heritage-category sites.",
+            "category": "lists",
+            "current": heritage_visited,
+            "target": 5,
+            "points": 18,
+        },
     ]
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     earned_count = 0
     score = 0
     for item in achievements:
@@ -244,30 +382,107 @@ def _build_achievements(context: Dict[str, Any]) -> Dict[str, Any]:
         if earned:
             earned_count += 1
             score += int(item["points"])
-        items.append({**item, "earned": earned, "progress_current": progress, "progress_target": target, "progress_percent": round((progress / target) * 100, 1), "progress_label": f"{progress:,} / {target:,}"})
+        items.append(
+            {
+                **item,
+                "earned": earned,
+                "progress_current": progress,
+                "progress_target": target,
+                "progress_percent": round((progress / target) * 100, 1),
+                "progress_label": f"{progress:,} / {target:,}",
+            }
+        )
     return {"earned": earned_count, "total": len(items), "score": score, "items": items}
 
-def _build_measurements(context: Dict[str, Any]) -> List[Dict[str, Any]]:
-    measurements: List[Dict[str, Any]] = []
+
+def _build_measurements(context: dict[str, Any]) -> list[dict[str, Any]]:
+    measurements: list[dict[str, Any]] = []
     if context["highest_elevation"]:
-        measurements.append(metric_entry("highest_elevation", "Highest elevation", context["highest_elevation"][0], round(context["highest_elevation"][1], 1), f"{round(context['highest_elevation'][1]):,} m"))
+        measurements.append(
+            metric_entry(
+                "highest_elevation",
+                "Highest elevation",
+                context["highest_elevation"][0],
+                round(context["highest_elevation"][1], 1),
+                f"{round(context['highest_elevation'][1]):,} m",
+            )
+        )
     if context["lowest_elevation"]:
-        measurements.append(metric_entry("lowest_elevation", "Lowest elevation", context["lowest_elevation"][0], round(context["lowest_elevation"][1], 1), f"{round(context['lowest_elevation'][1]):,} m"))
+        measurements.append(
+            metric_entry(
+                "lowest_elevation",
+                "Lowest elevation",
+                context["lowest_elevation"][0],
+                round(context["lowest_elevation"][1], 1),
+                f"{round(context['lowest_elevation'][1]):,} m",
+            )
+        )
     if context["largest_city"]:
-        measurements.append(metric_entry("largest_city", "Largest city visited", context["largest_city"][0], int(context["largest_city"][1]), f"{int(context['largest_city'][1]):,} people"))
+        measurements.append(
+            metric_entry(
+                "largest_city",
+                "Largest city visited",
+                context["largest_city"][0],
+                int(context["largest_city"][1]),
+                f"{int(context['largest_city'][1]):,} people",
+            )
+        )
     if context["largest_country"]:
-        measurements.append(metric_entry("largest_country", "Most populous country visited", context["largest_country"][0], int(context["largest_country"][1]), f"{int(context['largest_country'][1]):,} people", detail=context["largest_country"][2]))
+        measurements.append(
+            metric_entry(
+                "largest_country",
+                "Most populous country visited",
+                context["largest_country"][0],
+                int(context["largest_country"][1]),
+                f"{int(context['largest_country'][1]):,} people",
+                detail=context["largest_country"][2],
+            )
+        )
     if context["largest_state"]:
-        measurements.append(metric_entry("largest_state", "Largest region visited", context["largest_state"][0], round(context["largest_state"][1], 1), f"{round(context['largest_state'][1]):,} sq km"))
+        measurements.append(
+            metric_entry(
+                "largest_state",
+                "Largest region visited",
+                context["largest_state"][0],
+                round(context["largest_state"][1], 1),
+                f"{round(context['largest_state'][1]):,} sq km",
+            )
+        )
     if context["highest_airport"]:
-        measurements.append(metric_entry("highest_airport", "Highest airport visited", context["highest_airport"][0], round(context["highest_airport"][1], 1), f"{round(context['highest_airport'][1]):,} m"))
+        measurements.append(
+            metric_entry(
+                "highest_airport",
+                "Highest airport visited",
+                context["highest_airport"][0],
+                round(context["highest_airport"][1], 1),
+                f"{round(context['highest_airport'][1]):,} m",
+            )
+        )
     if context["longest_trip"]:
-        measurements.append(metric_entry("longest_trip", "Longest trip logged", context["longest_trip"][0], round(context["longest_trip"][1], 1), f"{round(context['longest_trip'][1]):,} mi", detail=context["longest_trip"][2]))
+        measurements.append(
+            metric_entry(
+                "longest_trip",
+                "Longest trip logged",
+                context["longest_trip"][0],
+                round(context["longest_trip"][1], 1),
+                f"{round(context['longest_trip'][1]):,} mi",
+                detail=context["longest_trip"][2],
+            )
+        )
     if context["most_connected_airport"]:
-        measurements.append(metric_entry("most_connected_airport", "Most used airport", context["most_connected_airport"][0], int(context["most_connected_airport"][1]), f"{int(context['most_connected_airport'][1]):,} trip touches"))
+        measurements.append(
+            metric_entry(
+                "most_connected_airport",
+                "Most used airport",
+                context["most_connected_airport"][0],
+                int(context["most_connected_airport"][1]),
+                f"{int(context['most_connected_airport'][1]):,} trip touches",
+            )
+        )
     return measurements
 
-def _all_site_rows(conn: DBConnection) -> List[Any]:
+
+def _all_site_rows(conn: DBConnection) -> list[Any]:
     return conn.execute(
         "SELECT places.id, places.data "
         f"FROM places {_active_place_join_sql()} "
@@ -275,15 +490,16 @@ def _all_site_rows(conn: DBConnection) -> List[Any]:
         (True,),
     ).fetchall()
 
+
 def _compute_profile_stats(
     conn: DBConnection,
     *,
-    profile_id: Optional[int],
-    user_id: Optional[int],
-    total_counts: Dict[str, int],
+    profile_id: int | None,
+    user_id: int | None,
+    total_counts: dict[str, int],
     total_continents: int,
-    site_rows: Optional[List[Any]] = None,
-) -> Dict[str, Any]:
+    site_rows: list[Any] | None = None,
+) -> dict[str, Any]:
     visited_rows = _visited_rows_for_profile(conn, profile_id, user_id)
     visited_ids = [str(row["place_id"]) for row in visited_rows]
     trip_log_rows = _trip_rows_for_profile(conn, profile_id, user_id)
@@ -291,11 +507,11 @@ def _compute_profile_stats(
     if site_rows is None:
         site_rows = _all_site_rows(conn)
 
-    trip_place_ids: List[str] = []
+    trip_place_ids: list[str] = []
     total_estimated_miles = 0.0
     total_legs = 0
-    repeated_airport_counts: Dict[str, int] = {}
-    trip_dates: Set[str] = set()
+    repeated_airport_counts: dict[str, int] = {}
+    trip_dates: set[str] = set()
     for row in trip_log_rows:
         total_estimated_miles += float(row["estimated_miles"] or 0.0)
         date_value = str(row["flown_on"] or row["created_at"] or "")[:10]
@@ -314,27 +530,27 @@ def _compute_profile_stats(
 
     hemisphere_counts = {"north": 0, "south": 0, "east": 0, "west": 0}
     hemisphere_quadrants = {"ne": 0, "nw": 0, "se": 0, "sw": 0}
-    farthest_north: Optional[Tuple[str, float]] = None
-    farthest_south: Optional[Tuple[str, float]] = None
-    easternmost: Optional[Tuple[str, float]] = None
-    westernmost: Optional[Tuple[str, float]] = None
-    highest_elevation: Optional[Tuple[str, float]] = None
-    lowest_elevation: Optional[Tuple[str, float]] = None
-    largest_city: Optional[Tuple[str, int]] = None
-    largest_country: Optional[Tuple[str, int, str]] = None
-    largest_state: Optional[Tuple[str, float]] = None
-    highest_airport: Optional[Tuple[str, float]] = None
-    timezone_set: Set[str] = set()
-    currency_set: Set[str] = set()
-    visited_continents_set: Set[str] = set()
+    farthest_north: tuple[str, float] | None = None
+    farthest_south: tuple[str, float] | None = None
+    easternmost: tuple[str, float] | None = None
+    westernmost: tuple[str, float] | None = None
+    highest_elevation: tuple[str, float] | None = None
+    lowest_elevation: tuple[str, float] | None = None
+    largest_city: tuple[str, int] | None = None
+    largest_country: tuple[str, int, str] | None = None
+    largest_state: tuple[str, float] | None = None
+    highest_airport: tuple[str, float] | None = None
+    timezone_set: set[str] = set()
+    currency_set: set[str] = set()
+    visited_continents_set: set[str] = set()
 
     for row in visited_place_rows:
         lat = as_float(row["lat"])
         lon = as_float(row["lon"])
         place_name = str(row["name"] or row["id"])
         data = parse_json_object(row["data"])
-        lat_side: Optional[str] = None
-        lon_side: Optional[str] = None
+        lat_side: str | None = None
+        lon_side: str | None = None
         if lat is not None:
             if lat >= 0:
                 hemisphere_counts["north"] += 1
@@ -358,7 +574,9 @@ def _compute_profile_stats(
             if westernmost is None or lon < westernmost[1]:
                 westernmost = (place_name, lon)
         if lat_side and lon_side:
-            hemisphere_quadrants[f"{lat_side}{lon_side}"] = hemisphere_quadrants.get(f"{lat_side}{lon_side}", 0) + 1
+            hemisphere_quadrants[f"{lat_side}{lon_side}"] = (
+                hemisphere_quadrants.get(f"{lat_side}{lon_side}", 0) + 1
+            )
 
         timezone = extract_timezone(data)
         if timezone:
@@ -380,7 +598,9 @@ def _compute_profile_stats(
                 currency_set.add(currency_code)
             population = extract_population(data)
             economy = extract_country_economy(data) or "Country"
-            if population is not None and (largest_country is None or population > largest_country[1]):
+            if population is not None and (
+                largest_country is None or population > largest_country[1]
+            ):
                 largest_country = (place_name, population, economy)
         elif row["type"] == "city":
             population = extract_population(data)
@@ -396,7 +616,7 @@ def _compute_profile_stats(
 
     longest_streak = 0
     current_streak = 0
-    previous_day: Optional[datetime] = None
+    previous_day: datetime | None = None
     for date_text in sorted(trip_dates):
         try:
             current_day = datetime.strptime(date_text, "%Y-%m-%d")
@@ -409,8 +629,8 @@ def _compute_profile_stats(
         longest_streak = max(longest_streak, current_streak)
         previous_day = current_day
 
-    site_category_totals: Dict[str, int] = {}
-    site_category_visited: Dict[str, int] = {}
+    site_category_totals: dict[str, int] = {}
+    site_category_visited: dict[str, int] = {}
     for row in site_rows:
         payload = parse_json_object(row["data"])
         category = str(payload.get("category") or "heritage").strip().lower()
@@ -422,18 +642,20 @@ def _compute_profile_stats(
         for category, total in sorted(site_category_totals.items())
     }
 
-    longest_trip: Optional[Tuple[str, float, str]] = None
+    longest_trip: tuple[str, float, str] | None = None
     for row in trip_log_rows:
         distance = float(row["estimated_miles"] or 0.0)
         if longest_trip is not None and distance <= longest_trip[1]:
             continue
         origin_name = trip_place_names.get(str(row["origin_place_id"]), str(row["origin_place_id"]))
-        destination_name = trip_place_names.get(str(row["destination_place_id"]), str(row["destination_place_id"]))
+        destination_name = trip_place_names.get(
+            str(row["destination_place_id"]), str(row["destination_place_id"])
+        )
         route_label = f"{origin_name} -> {destination_name}"
         date_label = str(row["flown_on"] or row["created_at"] or "")[:10]
         longest_trip = (route_label, distance, date_label or "Date unavailable")
 
-    most_connected_airport: Optional[Tuple[str, int]] = None
+    most_connected_airport: tuple[str, int] | None = None
     for airport_id, count in repeated_airport_counts.items():
         airport_name = trip_place_names.get(airport_id, airport_id)
         if most_connected_airport is None or count > most_connected_airport[1]:
@@ -444,7 +666,9 @@ def _compute_profile_stats(
     visited_cities = count_by_type(conn, "city", visited_ids)
     visited_airports = count_by_type(conn, "airport", visited_ids)
     visited_sites = count_by_type(conn, "site", visited_ids)
-    world_percent = (visited_countries / total_counts["country"] * 100) if total_counts["country"] else 0
+    world_percent = (
+        (visited_countries / total_counts["country"] * 100) if total_counts["country"] else 0
+    )
 
     context = {
         "visited_countries": visited_countries,
@@ -489,7 +713,11 @@ def _compute_profile_stats(
 
     return {
         "continents": {"visited": len(visited_continents_set), "total": total_continents},
-        "countries": {"visited": visited_countries, "total": total_counts["country"], "percent": round(world_percent, 1)},
+        "countries": {
+            "visited": visited_countries,
+            "total": total_counts["country"],
+            "percent": round(world_percent, 1),
+        },
         "states": {"visited": visited_states, "total": total_counts["state"]},
         "cities": {"visited": visited_cities, "total": total_counts["city"]},
         "airports": {"visited": visited_airports, "total": total_counts["airport"]},
@@ -498,7 +726,9 @@ def _compute_profile_stats(
             "count": len(trip_log_rows),
             "flight_legs": total_legs,
             "estimated_miles": round(total_estimated_miles, 1),
-            "average_miles_per_trip": round(total_estimated_miles / len(trip_log_rows), 1) if trip_log_rows else 0.0,
+            "average_miles_per_trip": round(total_estimated_miles / len(trip_log_rows), 1)
+            if trip_log_rows
+            else 0.0,
         },
         "site_categories": site_categories,
         "hemispheres": {
@@ -511,12 +741,30 @@ def _compute_profile_stats(
             },
         },
         "geo_extremes": {
-            "farthest_north": {"name": farthest_north[0], "lat": round(farthest_north[1], 4)} if farthest_north else None,
-            "farthest_south": {"name": farthest_south[0], "lat": round(farthest_south[1], 4)} if farthest_south else None,
-            "easternmost": {"name": easternmost[0], "lon": round(easternmost[1], 4)} if easternmost else None,
-            "westernmost": {"name": westernmost[0], "lon": round(westernmost[1], 4)} if westernmost else None,
-            "highest_elevation": {"name": highest_elevation[0], "elevation_m": round(highest_elevation[1], 1)} if highest_elevation else None,
-            "lowest_elevation": {"name": lowest_elevation[0], "elevation_m": round(lowest_elevation[1], 1)} if lowest_elevation else None,
+            "farthest_north": {"name": farthest_north[0], "lat": round(farthest_north[1], 4)}
+            if farthest_north
+            else None,
+            "farthest_south": {"name": farthest_south[0], "lat": round(farthest_south[1], 4)}
+            if farthest_south
+            else None,
+            "easternmost": {"name": easternmost[0], "lon": round(easternmost[1], 4)}
+            if easternmost
+            else None,
+            "westernmost": {"name": westernmost[0], "lon": round(westernmost[1], 4)}
+            if westernmost
+            else None,
+            "highest_elevation": {
+                "name": highest_elevation[0],
+                "elevation_m": round(highest_elevation[1], 1),
+            }
+            if highest_elevation
+            else None,
+            "lowest_elevation": {
+                "name": lowest_elevation[0],
+                "elevation_m": round(lowest_elevation[1], 1),
+            }
+            if lowest_elevation
+            else None,
         },
         "travel": {
             "distance_miles": round(total_estimated_miles, 1),
@@ -531,9 +779,12 @@ def _compute_profile_stats(
         "scorecard": {"overall_score": overall_score, "achievement_score": achievements["score"]},
     }
 
-def _apply_rarity_to_achievements(achievements: Dict[str, Any], public_snapshots: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def _apply_rarity_to_achievements(
+    achievements: dict[str, Any], public_snapshots: list[dict[str, Any]]
+) -> dict[str, Any]:
     total_public = len(public_snapshots)
-    earned_counts: Dict[str, int] = {}
+    earned_counts: dict[str, int] = {}
     for snapshot in public_snapshots:
         for item in snapshot["stats"]["achievements"]["items"]:
             if item["earned"]:
@@ -544,25 +795,40 @@ def _apply_rarity_to_achievements(achievements: Dict[str, Any], public_snapshots
             {
                 **item,
                 "earned_by_public_profiles": earned_counts.get(item["id"], 0),
-                "rarity_percent": round((earned_counts.get(item["id"], 0) / total_public) * 100, 1) if total_public else 0.0,
+                "rarity_percent": round((earned_counts.get(item["id"], 0) / total_public) * 100, 1)
+                if total_public
+                else 0.0,
             }
             for item in achievements["items"]
         ],
     }
 
+
 def _build_leaderboard(
-    selected_stats: Dict[str, Any],
-    selected_profile_id: Optional[int],
+    selected_stats: dict[str, Any],
+    selected_profile_id: int | None,
     selected_profile_public: bool,
-    public_snapshots: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    def rank_entries(metric_key: str, label: str) -> Dict[str, Any]:
-        sorted_entries = sorted(public_snapshots, key=lambda item: (-float(item["metrics"][metric_key]), str(item["name"]).lower(), int(item["id"])))
+    public_snapshots: list[dict[str, Any]],
+) -> dict[str, Any]:
+    def rank_entries(metric_key: str, label: str) -> dict[str, Any]:
+        sorted_entries = sorted(
+            public_snapshots,
+            key=lambda item: (
+                -float(item["metrics"][metric_key]),
+                str(item["name"]).lower(),
+                int(item["id"]),
+            ),
+        )
         return {
             "id": metric_key,
             "label": label,
             "leaders": [
-                {"profile_id": int(item["id"]), "name": item["name"], "color": item["color"], "value": item["metrics"][metric_key]}
+                {
+                    "profile_id": int(item["id"]),
+                    "name": item["name"],
+                    "color": item["color"],
+                    "value": item["metrics"][metric_key],
+                }
                 for item in sorted_entries[:5]
             ],
         }
@@ -576,7 +842,14 @@ def _build_leaderboard(
             "achievements": int(snapshot["stats"]["achievements"]["earned"]),
         }
 
-    sorted_overall = sorted(public_snapshots, key=lambda item: (-float(item["metrics"]["overall_score"]), str(item["name"]).lower(), int(item["id"])))
+    sorted_overall = sorted(
+        public_snapshots,
+        key=lambda item: (
+            -float(item["metrics"]["overall_score"]),
+            str(item["name"]).lower(),
+            int(item["id"]),
+        ),
+    )
     top_overall = [
         {
             "profile_id": int(item["id"]),
@@ -591,13 +864,27 @@ def _build_leaderboard(
         for item in sorted_overall[:10]
     ]
 
-    selected_summary: Optional[Dict[str, Any]] = None
+    selected_summary: dict[str, Any] | None = None
     if selected_profile_id is not None:
-        metric_ranks: Dict[str, Optional[int]] = {}
-        leading_categories: List[str] = []
+        metric_ranks: dict[str, int | None] = {}
+        leading_categories: list[str] = []
         for metric_key in ("overall_score", "countries", "continents", "miles", "achievements"):
-            metric_sorted = sorted(public_snapshots, key=lambda item: (-float(item["metrics"][metric_key]), str(item["name"]).lower(), int(item["id"])))
-            rank = next((index + 1 for index, item in enumerate(metric_sorted) if int(item["id"]) == selected_profile_id), None)
+            metric_sorted = sorted(
+                public_snapshots,
+                key=lambda item: (
+                    -float(item["metrics"][metric_key]),
+                    str(item["name"]).lower(),
+                    int(item["id"]),
+                ),
+            )
+            rank = next(
+                (
+                    index + 1
+                    for index, item in enumerate(metric_sorted)
+                    if int(item["id"]) == selected_profile_id
+                ),
+                None,
+            )
             metric_ranks[metric_key] = rank
             if rank == 1:
                 leading_categories.append(metric_key)
@@ -625,7 +912,8 @@ def _build_leaderboard(
         ],
     }
 
-def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]:
+
+def _serialize_place_item(row: Any, place_type: str) -> dict[str, Any] | None:
     item = dict(row)
     try:
         data = json.loads(item.get("data") or "{}")
@@ -639,7 +927,9 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
     country_text = str(item.get("country_code") or "").strip()
     location_parts = [part for part in [municipality, state_code, country_text] if part]
     country_codes = data.get("country_codes")
-    alternate_names = [str(value).strip() for value in (data.get("alternateNames") or []) if str(value).strip()]
+    alternate_names = [
+        str(value).strip() for value in (data.get("alternateNames") or []) if str(value).strip()
+    ]
     tags = [str(value).strip() for value in (data.get("tags") or []) if str(value).strip()]
     country_or_countries = [
         str(value).strip() for value in (data.get("countryOrCountries") or []) if str(value).strip()
@@ -660,7 +950,11 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
     item["population"] = extract_population(data)
     item["area_sqkm"] = extract_area_sqkm(data)
     item["continent"] = extract_continent_name(data) if place_type == "country" else None
-    item["country_codes"] = [str(code).strip().upper() for code in country_codes if str(code).strip()] if isinstance(country_codes, list) else None
+    item["country_codes"] = (
+        [str(code).strip().upper() for code in country_codes if str(code).strip()]
+        if isinstance(country_codes, list)
+        else None
+    )
     item["source"] = str(data.get("source") or data.get("source_dataset") or "").strip() or None
     item["sourceType"] = str(data.get("sourceType") or "").strip() or None
     item["alternateNames"] = alternate_names
@@ -669,7 +963,9 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
     item["cityOrLocality"] = str(data.get("cityOrLocality") or "").strip() or municipality
     item["latitude"] = as_float(data.get("latitude", item.get("lat")))
     item["longitude"] = as_float(data.get("longitude", item.get("lon")))
-    item["summary"] = str(data.get("summary") or data.get("short_description") or "").strip() or None
+    item["summary"] = (
+        str(data.get("summary") or data.get("short_description") or "").strip() or None
+    )
     item["tags"] = tags
     item["metadata"] = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
 
@@ -682,23 +978,23 @@ def _serialize_place_item(row: Any, place_type: str) -> Optional[Dict[str, Any]]
 
 
 __all__ = [
-    '_active_place_join_sql',
-    '_active_place_filter_sql',
-    'count_by_type',
-    'get_place_by_id',
-    'miles_between_points',
-    '_parse_layover_place_ids',
-    'build_trip_log_payload',
-    '_total_place_counts',
-    '_total_continent_count',
-    '_visited_rows_for_profile',
-    '_trip_rows_for_profile',
-    '_place_rows_by_ids',
-    '_build_achievements',
-    '_build_measurements',
-    '_all_site_rows',
-    '_compute_profile_stats',
-    '_apply_rarity_to_achievements',
-    '_build_leaderboard',
-    '_serialize_place_item',
+    "_active_place_join_sql",
+    "_active_place_filter_sql",
+    "count_by_type",
+    "get_place_by_id",
+    "miles_between_points",
+    "_parse_layover_place_ids",
+    "build_trip_log_payload",
+    "_total_place_counts",
+    "_total_continent_count",
+    "_visited_rows_for_profile",
+    "_trip_rows_for_profile",
+    "_place_rows_by_ids",
+    "_build_achievements",
+    "_build_measurements",
+    "_all_site_rows",
+    "_compute_profile_stats",
+    "_apply_rarity_to_achievements",
+    "_build_leaderboard",
+    "_serialize_place_item",
 ]

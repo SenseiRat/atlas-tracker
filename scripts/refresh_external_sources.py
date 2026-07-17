@@ -106,7 +106,6 @@ def fetch_cities() -> list[dict]:
     return cities
 
 
-
 def write_json(path: Path, payload) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=True, indent=2)
@@ -123,7 +122,9 @@ def main() -> None:
     cities = fetch_cities()
     write_json(CITIES_PATH, cities)
     print(f"  cities: {len(cities)}")
-    print("Skipping split site datasets (managed via whc001.json, darksky.json, festivals.json, and michelin_restaurants.json).")
+    print(
+        "Skipping split site datasets (managed via whc001.json, darksky.json, festivals.json, and michelin_restaurants.json)."
+    )
     print("Done. Re-run seed script to push changes into the database: python3 scripts/seed_db.py")
 
 

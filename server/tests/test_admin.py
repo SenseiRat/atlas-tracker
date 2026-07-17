@@ -1,4 +1,5 @@
 """Admin endpoints: users, profiles, settings."""
+
 from __future__ import annotations
 
 

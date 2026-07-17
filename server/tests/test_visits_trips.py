@@ -1,4 +1,5 @@
 """Visit toggling and trip logs."""
+
 from __future__ import annotations
 
 from conftest import create_profile, register_user

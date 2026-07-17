@@ -4,12 +4,18 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any
+from collections.abc import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_SOURCES_DIR = ROOT / "data_sources"
-SITE_DATASET_FILENAMES = ("whc001.json", "darksky.json", "festivals.json", "michelin_restaurants.json")
+SITE_DATASET_FILENAMES = (
+    "whc001.json",
+    "darksky.json",
+    "festivals.json",
+    "michelin_restaurants.json",
+)
 
 
 def load_json(path: Path) -> Any:
@@ -17,7 +23,7 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
-def as_float(value: Any) -> Optional[float]:
+def as_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
@@ -27,10 +33,13 @@ def as_float(value: Any) -> Optional[float]:
 
 
 def is_polygonal_geometry(geometry: Any) -> bool:
-    return isinstance(geometry, dict) and str(geometry.get("type") or "").strip() in {"Polygon", "MultiPolygon"}
+    return isinstance(geometry, dict) and str(geometry.get("type") or "").strip() in {
+        "Polygon",
+        "MultiPolygon",
+    }
 
 
-def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[str]:
+def normalize_country_code(raw: Any, iso2_to_iso3: dict[str, str]) -> str | None:
     code = str(raw or "").strip().upper()
     if not code:
         return None
@@ -39,7 +48,7 @@ def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[s
     return code
 
 
-def extract_state_code(item: Dict[str, Any]) -> Optional[str]:
+def extract_state_code(item: dict[str, Any]) -> str | None:
     state_code = item.get("state_code") or item.get("admin1_code") or item.get("state")
     if not state_code and item.get("iso_3166_2"):
         region = str(item.get("iso_3166_2"))
@@ -51,7 +60,7 @@ def extract_state_code(item: Dict[str, Any]) -> Optional[str]:
     return text or None
 
 
-def count_missing_point_fields(rows: Iterable[Dict[str, Any]]) -> int:
+def count_missing_point_fields(rows: Iterable[dict[str, Any]]) -> int:
     missing = 0
     for row in rows:
         lat = as_float(row.get("lat", row.get("latitude", row.get("latitude_deg"))))
@@ -61,8 +70,8 @@ def count_missing_point_fields(rows: Iterable[Dict[str, Any]]) -> int:
     return missing
 
 
-def load_site_rows() -> list[Dict[str, Any]]:
-    rows: list[Dict[str, Any]] = []
+def load_site_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for filename in SITE_DATASET_FILENAMES:
         payload = load_json(DATA_SOURCES_DIR / filename)
         if filename == "festivals.json":
@@ -93,7 +102,7 @@ def main() -> int:
     airports = load_json(DATA_SOURCES_DIR / "airports.json")
     sites = load_site_rows()
 
-    iso2_to_iso3: Dict[str, str] = {}
+    iso2_to_iso3: dict[str, str] = {}
     missing_country_fields: Counter[str] = Counter()
     for feature in countries.get("features", []):
         props = feature.get("properties", {})
@@ -132,7 +141,9 @@ def main() -> int:
     point_country_missing = Counter()
     for label, rows in (("city", cities), ("airport", airports), ("site", sites)):
         for row in rows:
-            country_code = normalize_country_code(row.get("country_code") or row.get("iso_country"), iso2_to_iso3)
+            country_code = normalize_country_code(
+                row.get("country_code") or row.get("iso_country"), iso2_to_iso3
+            )
             if not country_code:
                 point_country_missing[label] += 1
 

@@ -19,7 +19,8 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -30,34 +31,53 @@ from server.app.db import *  # noqa: F401,F403
 from server.app.helpers import *  # noqa: F401,F403
 from server.app.security import *  # noqa: F401,F403
 
-def _serialize_user(row: Any) -> Dict[str, Any]:
+
+def _serialize_user(row: Any) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "username": row.get("username") if isinstance(row, dict) else row["username"],
         "email": row.get("email") if isinstance(row, dict) else row["email"],
         "display_name": row.get("display_name") if isinstance(row, dict) else row["display_name"],
         "role": str((row.get("role") if isinstance(row, dict) else row["role"]) or "user"),
-        "is_admin": str((row.get("role") if isinstance(row, dict) else row["role"]) or "user") == "admin",
-        "theme_preference": str((row.get("theme_preference") if isinstance(row, dict) else row["theme_preference"]) or "dark"),
-        "measurement_system": str((row.get("measurement_system") if isinstance(row, dict) else row["measurement_system"]) or "imperial"),
+        "is_admin": str((row.get("role") if isinstance(row, dict) else row["role"]) or "user")
+        == "admin",
+        "theme_preference": str(
+            (row.get("theme_preference") if isinstance(row, dict) else row["theme_preference"])
+            or "dark"
+        ),
+        "measurement_system": str(
+            (row.get("measurement_system") if isinstance(row, dict) else row["measurement_system"])
+            or "imperial"
+        ),
         "default_profile_id": (
-            int((row.get("default_profile_id") if isinstance(row, dict) else row["default_profile_id"]))
-            if (row.get("default_profile_id") if isinstance(row, dict) else row["default_profile_id"]) is not None
+            int(
+                row.get("default_profile_id")
+                if isinstance(row, dict)
+                else row["default_profile_id"]
+            )
+            if (
+                row.get("default_profile_id")
+                if isinstance(row, dict)
+                else row["default_profile_id"]
+            )
+            is not None
             else None
         ),
     }
 
-_OIDC_METADATA_CACHE: Optional[Dict[str, Any]] = None
+
+_OIDC_METADATA_CACHE: dict[str, Any] | None = None
 
 _OIDC_JWKS_CLIENT: Any = None
+
 
 def _http_json(
     url: str,
     method: str = "GET",
-    payload: Optional[Dict[str, Any]] = None,
-    headers: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
-    data: Optional[bytes] = None
+    payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    data: bytes | None = None
     req_headers = {"Accept": "application/json"}
     if headers:
         req_headers.update(headers)
@@ -72,7 +92,8 @@ def _http_json(
         raise HTTPException(status_code=502, detail="Unexpected response from OIDC provider")
     return parsed
 
-def _get_oidc_metadata() -> Dict[str, Any]:
+
+def _get_oidc_metadata() -> dict[str, Any]:
     global _OIDC_METADATA_CACHE
     if _OIDC_METADATA_CACHE is not None:
         return _OIDC_METADATA_CACHE
@@ -88,6 +109,7 @@ def _get_oidc_metadata() -> Dict[str, Any]:
     _OIDC_METADATA_CACHE = metadata
     return metadata
 
+
 def _get_oidc_jwks_client() -> Any:
     global _OIDC_JWKS_CLIENT
     if _OIDC_JWKS_CLIENT is None:
@@ -95,15 +117,18 @@ def _get_oidc_jwks_client() -> Any:
         _OIDC_JWKS_CLIENT = jwt.PyJWKClient(metadata["jwks_uri"])
     return _OIDC_JWKS_CLIENT
 
+
 def _get_request_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
+
 
 def _get_redirect_uri(request: Request) -> str:
     if OIDC_REDIRECT_PATH.startswith("http://") or OIDC_REDIRECT_PATH.startswith("https://"):
         return OIDC_REDIRECT_PATH
     return f"{_get_request_base_url(request)}{OIDC_REDIRECT_PATH}"
 
-def _get_local_users(conn: DBConnection) -> List[Dict[str, Any]]:
+
+def _get_local_users(conn: DBConnection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT id, username, email, display_name, role, theme_preference, measurement_system, default_profile_id
@@ -114,6 +139,7 @@ def _get_local_users(conn: DBConnection) -> List[Dict[str, Any]]:
     ).fetchall()
     return [_serialize_user(row) for row in rows]
 
+
 def _set_local_session_cookie(response: Response, user_id: int) -> None:
     ttl_seconds = max(OIDC_SESSION_TTL_SECONDS, 3600)
     payload = {
@@ -123,7 +149,8 @@ def _set_local_session_cookie(response: Response, user_id: int) -> None:
     }
     _set_signed_cookie(response, LOCAL_USER_COOKIE, payload, ttl_seconds)
 
-def _get_local_user_by_cookie(request: Request, conn: DBConnection) -> Optional[Dict[str, Any]]:
+
+def _get_local_user_by_cookie(request: Request, conn: DBConnection) -> dict[str, Any] | None:
     payload = _read_signed_cookie(request.cookies.get(LOCAL_USER_COOKIE))
     if not payload or payload.get("iss") != "local":
         return None
@@ -141,7 +168,8 @@ def _get_local_user_by_cookie(request: Request, conn: DBConnection) -> Optional[
     ).fetchone()
     return dict(user) if user else None
 
-def _require_user(request: Request, conn: DBConnection) -> Dict[str, Any]:
+
+def _require_user(request: Request, conn: DBConnection) -> dict[str, Any]:
     if OIDC_ENABLED:
         token = request.cookies.get(OIDC_SESSION_COOKIE)
         payload = _read_signed_cookie(token)
@@ -172,7 +200,8 @@ def _require_user(request: Request, conn: DBConnection) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail="Create your first user in Settings")
     raise HTTPException(status_code=401, detail="Select a user in Settings")
 
-def _optional_user(request: Request, conn: DBConnection) -> Optional[Dict[str, Any]]:
+
+def _optional_user(request: Request, conn: DBConnection) -> dict[str, Any] | None:
     if OIDC_ENABLED:
         token = request.cookies.get(OIDC_SESSION_COOKIE)
         payload = _read_signed_cookie(token)
@@ -194,7 +223,10 @@ def _optional_user(request: Request, conn: DBConnection) -> Optional[Dict[str, A
         return dict(user) if user else None
     return _get_local_user_by_cookie(request, conn)
 
-def _upsert_user(conn: DBConnection, issuer: str, subject: str, email: Optional[str], display_name: Optional[str]) -> int:
+
+def _upsert_user(
+    conn: DBConnection, issuer: str, subject: str, email: str | None, display_name: str | None
+) -> int:
     now = current_timestamp()
     existing = conn.execute(
         "SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?",
@@ -220,26 +252,37 @@ def _upsert_user(conn: DBConnection, issuer: str, subject: str, email: Optional[
     ).fetchone()
     return int(inserted["id"] if isinstance(inserted, dict) else inserted[0])
 
+
 def _assign_legacy_profiles_if_needed(conn: DBConnection, user_id: int) -> None:
-    owned_count = conn.execute("SELECT COUNT(*) as count FROM profiles WHERE owner_user_id IS NOT NULL").fetchone()["count"]
+    owned_count = conn.execute(
+        "SELECT COUNT(*) as count FROM profiles WHERE owner_user_id IS NOT NULL"
+    ).fetchone()["count"]
     if int(owned_count) > 0:
         return
     conn.execute("UPDATE profiles SET owner_user_id = ? WHERE owner_user_id IS NULL", (user_id,))
 
-def _normalize_profile_row(row: Any, viewer_user_id: Optional[int]) -> Dict[str, Any]:
+
+def _normalize_profile_row(row: Any, viewer_user_id: int | None) -> dict[str, Any]:
     owner_user_id = row["owner_user_id"]
-    is_owned = viewer_user_id is not None and owner_user_id is not None and int(owner_user_id) == int(viewer_user_id)
+    is_owned = (
+        viewer_user_id is not None
+        and owner_user_id is not None
+        and int(owner_user_id) == int(viewer_user_id)
+    )
     return {
         "id": row["id"],
         "name": row["name"],
         "color": normalize_profile_color(row["color"]),
-        "home_country_code": normalize_profile_home_country_code(row["home_country_code"]) if row["home_country_code"] else None,
+        "home_country_code": normalize_profile_home_country_code(row["home_country_code"])
+        if row["home_country_code"]
+        else None,
         "is_public": bool(row["is_public"]),
         "owner_user_id": owner_user_id,
         "is_owned": is_owned,
     }
 
-def _can_read_profile(conn: DBConnection, profile_id: int, user_id: Optional[int]) -> Dict[str, Any]:
+
+def _can_read_profile(conn: DBConnection, profile_id: int, user_id: int | None) -> dict[str, Any]:
     profile = conn.execute(
         "SELECT id, owner_user_id, is_public FROM profiles WHERE id = ?",
         (profile_id,),
@@ -253,7 +296,8 @@ def _can_read_profile(conn: DBConnection, profile_id: int, user_id: Optional[int
         return dict(profile)
     raise HTTPException(status_code=404, detail="Profile not found")
 
-def _require_profile_owner(conn: DBConnection, profile_id: int, user_id: int) -> Dict[str, Any]:
+
+def _require_profile_owner(conn: DBConnection, profile_id: int, user_id: int) -> dict[str, Any]:
     profile = conn.execute(
         "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
         (profile_id,),
@@ -265,7 +309,8 @@ def _require_profile_owner(conn: DBConnection, profile_id: int, user_id: int) ->
         raise HTTPException(status_code=404, detail="Profile not found")
     return dict(profile)
 
-def _require_admin(request: Request, conn: DBConnection) -> Dict[str, Any]:
+
+def _require_admin(request: Request, conn: DBConnection) -> dict[str, Any]:
     user = _require_user(request, conn)
     if str(user.get("role") or "user") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -273,23 +318,23 @@ def _require_admin(request: Request, conn: DBConnection) -> Dict[str, Any]:
 
 
 __all__ = [
-    '_serialize_user',
-    '_OIDC_METADATA_CACHE',
-    '_OIDC_JWKS_CLIENT',
-    '_http_json',
-    '_get_oidc_metadata',
-    '_get_oidc_jwks_client',
-    '_get_request_base_url',
-    '_get_redirect_uri',
-    '_get_local_users',
-    '_set_local_session_cookie',
-    '_get_local_user_by_cookie',
-    '_require_user',
-    '_optional_user',
-    '_upsert_user',
-    '_assign_legacy_profiles_if_needed',
-    '_normalize_profile_row',
-    '_can_read_profile',
-    '_require_profile_owner',
-    '_require_admin',
+    "_serialize_user",
+    "_OIDC_METADATA_CACHE",
+    "_OIDC_JWKS_CLIENT",
+    "_http_json",
+    "_get_oidc_metadata",
+    "_get_oidc_jwks_client",
+    "_get_request_base_url",
+    "_get_redirect_uri",
+    "_get_local_users",
+    "_set_local_session_cookie",
+    "_get_local_user_by_cookie",
+    "_require_user",
+    "_optional_user",
+    "_upsert_user",
+    "_assign_legacy_profiles_if_needed",
+    "_normalize_profile_row",
+    "_can_read_profile",
+    "_require_profile_owner",
+    "_require_admin",
 ]

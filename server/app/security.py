@@ -19,13 +19,15 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from server.app.config import *  # noqa: F401,F403
+
 
 def _hash_password(password: str) -> str:
     normalized = str(password or "")
@@ -40,7 +42,8 @@ def _hash_password(password: str) -> str:
         f"{base64.urlsafe_b64encode(digest).decode('utf-8')}"
     )
 
-def _verify_password(password: str, password_hash: Optional[str]) -> bool:
+
+def _verify_password(password: str, password_hash: str | None) -> bool:
     if not password_hash:
         return False
     parts = str(password_hash).split("$")
@@ -52,17 +55,23 @@ def _verify_password(password: str, password_hash: Optional[str]) -> bool:
         expected = base64.urlsafe_b64decode(parts[3].encode("utf-8"))
     except Exception:
         return False
-    digest = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, max(iterations, 1))
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", str(password or "").encode("utf-8"), salt, max(iterations, 1)
+    )
     return hmac.compare_digest(digest, expected)
+
 
 def _base64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
 
 def _base64url_decode(raw: str) -> bytes:
     padding = "=" * ((4 - len(raw) % 4) % 4)
     return base64.urlsafe_b64decode(raw + padding)
 
-_SESSION_SECRET_CACHE: Optional[str] = None
+
+_SESSION_SECRET_CACHE: str | None = None
+
 
 def _get_session_secret() -> str:
     """Return the cookie-signing secret.
@@ -92,13 +101,17 @@ def _get_session_secret() -> str:
     _SESSION_SECRET_CACHE = secret
     return secret
 
-def _sign_payload(payload: Dict[str, Any]) -> str:
+
+def _sign_payload(payload: dict[str, Any]) -> str:
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     payload_part = _base64url_encode(payload_json)
-    signature = hmac.new(_get_session_secret().encode("utf-8"), payload_part.encode("utf-8"), hashlib.sha256).digest()
+    signature = hmac.new(
+        _get_session_secret().encode("utf-8"), payload_part.encode("utf-8"), hashlib.sha256
+    ).digest()
     return f"{payload_part}.{_base64url_encode(signature)}"
 
-def _read_signed_cookie(raw_cookie: Optional[str]) -> Optional[Dict[str, Any]]:
+
+def _read_signed_cookie(raw_cookie: str | None) -> dict[str, Any] | None:
     if not raw_cookie:
         return None
     try:
@@ -125,7 +138,10 @@ def _read_signed_cookie(raw_cookie: Optional[str]) -> Optional[Dict[str, Any]]:
         return None
     return payload
 
-def _set_signed_cookie(response: Response, cookie_name: str, payload: Dict[str, Any], ttl_seconds: int) -> None:
+
+def _set_signed_cookie(
+    response: Response, cookie_name: str, payload: dict[str, Any], ttl_seconds: int
+) -> None:
     value = _sign_payload(payload)
     response.set_cookie(
         key=cookie_name,
@@ -137,19 +153,20 @@ def _set_signed_cookie(response: Response, cookie_name: str, payload: Dict[str, 
         path="/",
     )
 
+
 def _clear_cookie(response: Response, cookie_name: str) -> None:
     response.delete_cookie(cookie_name, path="/")
 
 
 __all__ = [
-    '_hash_password',
-    '_verify_password',
-    '_base64url_encode',
-    '_base64url_decode',
-    '_SESSION_SECRET_CACHE',
-    '_get_session_secret',
-    '_sign_payload',
-    '_read_signed_cookie',
-    '_set_signed_cookie',
-    '_clear_cookie',
+    "_hash_password",
+    "_verify_password",
+    "_base64url_encode",
+    "_base64url_decode",
+    "_SESSION_SECRET_CACHE",
+    "_get_session_secret",
+    "_sign_payload",
+    "_read_signed_cookie",
+    "_set_signed_cookie",
+    "_clear_cookie",
 ]

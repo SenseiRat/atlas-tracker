@@ -1,6 +1,6 @@
 """Place listing, search, and geojson endpoints (seeded from fixture datasets)."""
-from __future__ import annotations
 
+from __future__ import annotations
 
 
 def test_places_seeded_from_fixtures(client):

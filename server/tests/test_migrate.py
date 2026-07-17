@@ -1,4 +1,5 @@
 """Database backend migration (sqlite -> sqlite copy)."""
+
 from __future__ import annotations
 
 import sqlite3

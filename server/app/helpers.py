@@ -17,9 +17,10 @@ import unicodedata
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -27,16 +28,19 @@ from fastapi.staticfiles import StaticFiles
 
 from server.app.config import *  # noqa: F401,F403
 
+
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
 
 def slugify(value: Any) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9]+", "-", text)
     return text.strip("-")
 
-def as_float(value: Any) -> Optional[float]:
+
+def as_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     try:
@@ -44,12 +48,14 @@ def as_float(value: Any) -> Optional[float]:
     except (TypeError, ValueError):
         return None
 
+
 def is_polygonal_geometry(geometry: Any) -> bool:
     if not isinstance(geometry, dict):
         return False
     return str(geometry.get("type") or "").strip() in {"Polygon", "MultiPolygon"}
 
-def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[str]:
+
+def normalize_country_code(raw: Any, iso2_to_iso3: dict[str, str]) -> str | None:
     code = str(raw or "").strip().upper()
     if not code:
         return None
@@ -57,7 +63,8 @@ def normalize_country_code(raw: Any, iso2_to_iso3: Dict[str, str]) -> Optional[s
         return iso2_to_iso3.get(code, code)
     return code
 
-def extract_state_code(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_state_code(item: dict[str, Any]) -> str | None:
     state_code = item.get("state_code") or item.get("admin1_code") or item.get("state")
     if not state_code and item.get("iso_3166_2"):
         region = str(item.get("iso_3166_2"))
@@ -74,16 +81,19 @@ def extract_state_code(item: Dict[str, Any]) -> Optional[str]:
     state_code_text = str(state_code or "").strip().upper()
     return state_code_text or None
 
-def extract_airport_code(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_airport_code(item: dict[str, Any]) -> str | None:
     for key in ("iata_code", "airport_code", "code"):
         value = str(item.get(key) or "").strip().upper()
         if IATA_CODE_RE.match(value):
             return value
     return None
 
-def is_duplicate_airport_record(item: Dict[str, Any]) -> bool:
+
+def is_duplicate_airport_record(item: dict[str, Any]) -> bool:
     name = str(item.get("name") or "").strip().lower()
     return name.startswith("(duplicate)")
+
 
 def normalize_profile_color(raw: Any) -> str:
     color = str(raw or "").strip()
@@ -91,22 +101,27 @@ def normalize_profile_color(raw: Any) -> str:
         return color.lower()
     return DEFAULT_PROFILE_COLOR
 
-def normalize_profile_home_country_code(raw: Any) -> Optional[str]:
+
+def normalize_profile_home_country_code(raw: Any) -> str | None:
     code = str(raw or "").strip().upper()
     if not code:
         return None
     if re.fullmatch(r"[A-Z]{2,3}", code):
         return code
-    raise HTTPException(status_code=400, detail="home_country_code must be a 2- or 3-letter country code")
+    raise HTTPException(
+        status_code=400, detail="home_country_code must be a 2- or 3-letter country code"
+    )
 
-def extract_timezone(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_timezone(item: dict[str, Any]) -> str | None:
     for key in ("timezone", "tz_database_time_zone", "tz", "iana_timezone"):
         value = str(item.get(key) or "").strip()
         if value:
             return value
     return None
 
-def extract_elevation_meters(item: Dict[str, Any]) -> Optional[float]:
+
+def extract_elevation_meters(item: dict[str, Any]) -> float | None:
     meters = as_float(item.get("elevation_m") or item.get("elevation"))
     if meters is not None:
         return meters
@@ -118,7 +133,8 @@ def extract_elevation_meters(item: Dict[str, Any]) -> Optional[float]:
         return dem
     return None
 
-def get_continent_from_country_data(data_value: str) -> Optional[str]:
+
+def get_continent_from_country_data(data_value: str) -> str | None:
     try:
         payload = json.loads(data_value)
     except json.JSONDecodeError:
@@ -127,7 +143,8 @@ def get_continent_from_country_data(data_value: str) -> Optional[str]:
     continent = str(properties.get("CONTINENT") or properties.get("continent") or "").strip()
     return continent or None
 
-def parse_json_object(raw: Any) -> Dict[str, Any]:
+
+def parse_json_object(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     try:
@@ -136,11 +153,13 @@ def parse_json_object(raw: Any) -> Dict[str, Any]:
         return {}
     return loaded if isinstance(loaded, dict) else {}
 
-def nested_place_properties(item: Dict[str, Any]) -> Dict[str, Any]:
+
+def nested_place_properties(item: dict[str, Any]) -> dict[str, Any]:
     properties = item.get("properties", {})
     return properties if isinstance(properties, dict) else {}
 
-def extract_population(item: Dict[str, Any]) -> Optional[int]:
+
+def extract_population(item: dict[str, Any]) -> int | None:
     properties = nested_place_properties(item)
     for value in (
         item.get("population"),
@@ -153,7 +172,8 @@ def extract_population(item: Dict[str, Any]) -> Optional[int]:
             return int(parsed)
     return None
 
-def extract_area_sqkm(item: Dict[str, Any]) -> Optional[float]:
+
+def extract_area_sqkm(item: dict[str, Any]) -> float | None:
     properties = nested_place_properties(item)
     for value in (
         item.get("area_sqkm"),
@@ -165,7 +185,8 @@ def extract_area_sqkm(item: Dict[str, Any]) -> Optional[float]:
             return parsed
     return None
 
-def extract_country_currency(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_country_currency(item: dict[str, Any]) -> str | None:
     properties = nested_place_properties(item)
     currency_code = str(
         properties.get("CURRENCY_CODE")
@@ -177,15 +198,20 @@ def extract_country_currency(item: Dict[str, Any]) -> Optional[str]:
     ).strip()
     return currency_code or None
 
-def extract_country_economy(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_country_economy(item: dict[str, Any]) -> str | None:
     properties = nested_place_properties(item)
     economy = str(properties.get("ECONOMY") or properties.get("economy") or "").strip()
     return economy or None
 
-def extract_continent_name(item: Dict[str, Any]) -> Optional[str]:
+
+def extract_continent_name(item: dict[str, Any]) -> str | None:
     properties = nested_place_properties(item)
-    continent = str(properties.get("CONTINENT") or properties.get("continent") or item.get("continent") or "").strip()
+    continent = str(
+        properties.get("CONTINENT") or properties.get("continent") or item.get("continent") or ""
+    ).strip()
     return continent or None
+
 
 def metric_entry(
     metric_id: str,
@@ -194,9 +220,9 @@ def metric_entry(
     value: Any,
     display_value: str,
     *,
-    detail: Optional[str] = None,
-    unit: Optional[str] = None,
-) -> Dict[str, Any]:
+    detail: str | None = None,
+    unit: str | None = None,
+) -> dict[str, Any]:
     return {
         "id": metric_id,
         "label": label,
@@ -207,15 +233,20 @@ def metric_entry(
         "unit": unit,
     }
 
+
 def current_timestamp() -> str:
     # naive-UTC isoformat, matching the format stored since the first release
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
+
 
 def _normalize_local_username(raw: Any) -> str:
     username = str(raw or "").strip().lower()
     if not username or not re.match(r"^[a-z0-9_.-]{3,40}$", username):
-        raise HTTPException(status_code=400, detail="Username must be 3-40 chars: letters, numbers, ., _, -")
+        raise HTTPException(
+            status_code=400, detail="Username must be 3-40 chars: letters, numbers, ., _, -"
+        )
     return username
+
 
 def _path_digest(path: Path) -> str:
     digest = hashlib.sha256()
@@ -223,6 +254,7 @@ def _path_digest(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
 
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -243,7 +275,8 @@ DARKSKY_WEATHER_COORDS_RE = re.compile(
 
 DARKSKY_ANY_COORDS_RE = re.compile(r"\((-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\)")
 
-def sanitize_markup_text(value: Any) -> Optional[str]:
+
+def sanitize_markup_text(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value)
@@ -255,6 +288,7 @@ def sanitize_markup_text(value: Any) -> Optional[str]:
     text = re.sub(r"\s+", " ", text).strip()
     return text or None
 
+
 def normalize_lookup_text(value: Any) -> str:
     text = sanitize_markup_text(value) or ""
     normalized = unicodedata.normalize("NFKD", text)
@@ -263,13 +297,15 @@ def normalize_lookup_text(value: Any) -> str:
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized.lower()).strip()
     return normalized
 
-def register_country_name_variants(mapping: Dict[str, str], country_code: str, *names: Any) -> None:
+
+def register_country_name_variants(mapping: dict[str, str], country_code: str, *names: Any) -> None:
     for raw_name in names:
         normalized = normalize_lookup_text(raw_name)
         if normalized:
             mapping[normalized] = country_code
 
-def infer_country_code_from_text(value: Any, country_name_to_iso3: Dict[str, str]) -> Optional[str]:
+
+def infer_country_code_from_text(value: Any, country_name_to_iso3: dict[str, str]) -> str | None:
     text = sanitize_markup_text(value)
     if not text:
         return None
@@ -289,7 +325,8 @@ def infer_country_code_from_text(value: Any, country_name_to_iso3: Dict[str, str
                 return country_name_to_iso3[suffix]
     return None
 
-def extract_michelin_location_parts(value: Any) -> Tuple[Optional[str], Optional[str]]:
+
+def extract_michelin_location_parts(value: Any) -> tuple[str | None, str | None]:
     text = sanitize_markup_text(value)
     if not text:
         return None, None
@@ -300,15 +337,18 @@ def extract_michelin_location_parts(value: Any) -> Tuple[Optional[str], Optional
     country = parts[-1] if len(parts) > 1 else None
     return location or None, country or None
 
-def extract_michelin_summary_details(value: Any, restaurant_name: Optional[str]) -> Dict[str, Optional[str]]:
+
+def extract_michelin_summary_details(
+    value: Any, restaurant_name: str | None
+) -> dict[str, str | None]:
     text = sanitize_markup_text(value)
     if not text:
         return {"location": None, "price": None, "cuisine": None}
     prefix = "Reserve a table "
     if text.startswith(prefix):
-        text = text[len(prefix):].strip()
+        text = text[len(prefix) :].strip()
     if restaurant_name and text.startswith(restaurant_name):
-        text = text[len(restaurant_name):].strip(" ,-")
+        text = text[len(restaurant_name) :].strip(" ,-")
 
     cuisine = None
     details_text = text
@@ -327,7 +367,8 @@ def extract_michelin_summary_details(value: Any, restaurant_name: Optional[str])
         "cuisine": cuisine,
     }
 
-def extract_darksky_coordinates(value: Any) -> Tuple[Optional[float], Optional[float]]:
+
+def extract_darksky_coordinates(value: Any) -> tuple[float | None, float | None]:
     text = sanitize_markup_text(value)
     if not text:
         return None, None
@@ -344,7 +385,8 @@ def extract_darksky_coordinates(value: Any) -> Tuple[Optional[float], Optional[f
     lon = as_float(match.group(2))
     return lat, lon
 
-def extract_darksky_category_label(value: Any) -> Optional[str]:
+
+def extract_darksky_category_label(value: Any) -> str | None:
     text = sanitize_markup_text(value)
     if not text:
         return None
@@ -354,7 +396,11 @@ def extract_darksky_category_label(value: Any) -> Optional[str]:
     normalized = normalize_lookup_text(text)
     if "urban night sky place" in normalized:
         return "Urban Night Sky Place"
-    if "darksky approved lodging" in normalized or "darksky lodging standards" in normalized or "lodging program" in normalized:
+    if (
+        "darksky approved lodging" in normalized
+        or "darksky lodging standards" in normalized
+        or "lodging program" in normalized
+    ):
         return "Dark Sky Lodging"
     if "dark sky sanctuary" in normalized:
         return "Dark Sky Sanctuary"
@@ -366,14 +412,16 @@ def extract_darksky_category_label(value: Any) -> Optional[str]:
         return "Dark Sky Park"
     return None
 
-def extract_darksky_address(value: Any) -> Optional[str]:
+
+def extract_darksky_address(value: Any) -> str | None:
     text = sanitize_markup_text(value)
     if not text:
         return None
     match = DARKSKY_ADDRESS_RE.search(text)
     return sanitize_markup_text(match.group(1)) if match else None
 
-def normalize_darksky_category(category_label: Optional[str]) -> str:
+
+def normalize_darksky_category(category_label: str | None) -> str:
     label = normalize_lookup_text(category_label)
     if "lodging" in label:
         return "dark_sky_lodging"
@@ -393,43 +441,43 @@ def normalize_darksky_category(category_label: Optional[str]) -> str:
 
 
 __all__ = [
-    'load_json',
-    'slugify',
-    'as_float',
-    'is_polygonal_geometry',
-    'normalize_country_code',
-    'extract_state_code',
-    'extract_airport_code',
-    'is_duplicate_airport_record',
-    'normalize_profile_color',
-    'normalize_profile_home_country_code',
-    'extract_timezone',
-    'extract_elevation_meters',
-    'get_continent_from_country_data',
-    'parse_json_object',
-    'nested_place_properties',
-    'extract_population',
-    'extract_area_sqkm',
-    'extract_country_currency',
-    'extract_country_economy',
-    'extract_continent_name',
-    'metric_entry',
-    'current_timestamp',
-    '_normalize_local_username',
-    '_path_digest',
-    'HTML_TAG_RE',
-    'DARKSKY_CATEGORY_RE',
-    'DARKSKY_ADDRESS_RE',
-    'DARKSKY_WEATHER_COORDS_RE',
-    'DARKSKY_ANY_COORDS_RE',
-    'sanitize_markup_text',
-    'normalize_lookup_text',
-    'register_country_name_variants',
-    'infer_country_code_from_text',
-    'extract_michelin_location_parts',
-    'extract_michelin_summary_details',
-    'extract_darksky_coordinates',
-    'extract_darksky_category_label',
-    'extract_darksky_address',
-    'normalize_darksky_category',
+    "load_json",
+    "slugify",
+    "as_float",
+    "is_polygonal_geometry",
+    "normalize_country_code",
+    "extract_state_code",
+    "extract_airport_code",
+    "is_duplicate_airport_record",
+    "normalize_profile_color",
+    "normalize_profile_home_country_code",
+    "extract_timezone",
+    "extract_elevation_meters",
+    "get_continent_from_country_data",
+    "parse_json_object",
+    "nested_place_properties",
+    "extract_population",
+    "extract_area_sqkm",
+    "extract_country_currency",
+    "extract_country_economy",
+    "extract_continent_name",
+    "metric_entry",
+    "current_timestamp",
+    "_normalize_local_username",
+    "_path_digest",
+    "HTML_TAG_RE",
+    "DARKSKY_CATEGORY_RE",
+    "DARKSKY_ADDRESS_RE",
+    "DARKSKY_WEATHER_COORDS_RE",
+    "DARKSKY_ANY_COORDS_RE",
+    "sanitize_markup_text",
+    "normalize_lookup_text",
+    "register_country_name_variants",
+    "infer_country_code_from_text",
+    "extract_michelin_location_parts",
+    "extract_michelin_summary_details",
+    "extract_darksky_coordinates",
+    "extract_darksky_category_label",
+    "extract_darksky_address",
+    "normalize_darksky_category",
 ]

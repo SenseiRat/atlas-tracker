@@ -1,4 +1,5 @@
 """Stats endpoint shape and counts."""
+
 from __future__ import annotations
 
 from conftest import create_profile, register_user

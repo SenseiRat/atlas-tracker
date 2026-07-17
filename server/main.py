@@ -3,6 +3,7 @@
 Assembles the app from the server.app package and re-exports the package
 surface so `server.main.<name>` keeps working for scripts and tests.
 """
+
 from server.app.config import *  # noqa: F401,F403
 from server.app.db import *  # noqa: F401,F403
 from server.app.helpers import *  # noqa: F401,F403

@@ -19,7 +19,8 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -28,7 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from server.app.config import *  # noqa: F401,F403
 from server.app.db import *  # noqa: F401,F403
 
-def _get_app_settings(conn: DBConnection) -> Dict[str, Any]:
+
+def _get_app_settings(conn: DBConnection) -> dict[str, Any]:
     rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
     settings = {str(row["key"]): str(row["value"]) for row in rows}
     return {
@@ -47,18 +49,21 @@ def _get_app_settings(conn: DBConnection) -> Dict[str, Any]:
         "sqlite_db_path": settings.get("sqlite_db_path", str(DB_PATH)),
     }
 
+
 SECRET_SETTING_KEYS = ("db_password", "oidc_client_secret")
 
 SECRET_PLACEHOLDER = "__secret_unchanged__"
 
-def _masked_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+
+def _masked_settings(settings: dict[str, Any]) -> dict[str, Any]:
     """Copy of settings with stored secrets replaced by a write-only sentinel."""
     masked = dict(settings)
     for key in SECRET_SETTING_KEYS:
         masked[key] = SECRET_PLACEHOLDER if masked.get(key) else ""
     return masked
 
-def _resolve_secret_placeholders(updates: Dict[str, Any], stored: Dict[str, Any]) -> Dict[str, Any]:
+
+def _resolve_secret_placeholders(updates: dict[str, Any], stored: dict[str, Any]) -> dict[str, Any]:
     """Replace the sentinel in incoming updates with the stored secret values."""
     resolved = dict(updates)
     for key in SECRET_SETTING_KEYS:
@@ -66,7 +71,8 @@ def _resolve_secret_placeholders(updates: Dict[str, Any], stored: Dict[str, Any]
             resolved[key] = stored.get(key) or ""
     return resolved
 
-def _set_app_settings(conn: DBConnection, settings: Dict[str, Any]) -> None:
+
+def _set_app_settings(conn: DBConnection, settings: dict[str, Any]) -> None:
     rows = [(str(key), str(value)) for key, value in settings.items()]
     if not rows:
         return
@@ -79,11 +85,13 @@ def _set_app_settings(conn: DBConnection, settings: Dict[str, Any]) -> None:
         rows,
     )
 
-def _list_table_rows(conn: DBConnection, table: str, columns: List[str]) -> List[Dict[str, Any]]:
+
+def _list_table_rows(conn: DBConnection, table: str, columns: list[str]) -> list[dict[str, Any]]:
     rows = conn.execute(f"SELECT {', '.join(columns)} FROM {table}").fetchall()
     return [dict(row) for row in rows]
 
-def _same_backend_target(backend: str, settings: Dict[str, Any]) -> bool:
+
+def _same_backend_target(backend: str, settings: dict[str, Any]) -> bool:
     if backend != DB_BACKEND:
         return False
     if backend == "sqlite":
@@ -97,16 +105,29 @@ def _same_backend_target(backend: str, settings: Dict[str, Any]) -> bool:
         and str(settings.get("db_port") or DB_PORT).strip() == str(DB_PORT)
     )
 
+
 def _clear_target_tables(conn: DBConnection) -> None:
-    for table in ("visits", "trip_logs", "place_source_state", "profiles", "users", "places", "app_settings"):
+    for table in (
+        "visits",
+        "trip_logs",
+        "place_source_state",
+        "profiles",
+        "users",
+        "places",
+        "app_settings",
+    ):
         conn.execute(f"DELETE FROM {table}")
 
-def _copy_rows(conn: DBConnection, table: str, columns: List[str], rows: List[Dict[str, Any]]) -> None:
+
+def _copy_rows(
+    conn: DBConnection, table: str, columns: list[str], rows: list[dict[str, Any]]
+) -> None:
     if not rows:
         return
     placeholders = ",".join("?" for _ in columns)
     query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
     conn.executemany(query, [tuple(row.get(column) for column in columns) for row in rows])
+
 
 def _reset_postgres_sequence(conn: DBConnection, table: str, column: str) -> None:
     conn.execute(
@@ -119,20 +140,45 @@ def _reset_postgres_sequence(conn: DBConnection, table: str, column: str) -> Non
         """
     )
 
-def _migrate_database_snapshot(target_backend: str, target_settings: Dict[str, Any], snapshot: Dict[str, List[Dict[str, Any]]]) -> None:
+
+def _migrate_database_snapshot(
+    target_backend: str, target_settings: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]]
+) -> None:
     with get_db_for_backend(target_backend, target_settings) as target_conn:
         _ensure_schema(target_conn, target_backend)
         _clear_target_tables(target_conn)
         _copy_rows(
             target_conn,
             "users",
-            ["id", "username", "oidc_issuer", "oidc_subject", "email", "display_name", "password_hash", "role", "theme_preference", "measurement_system", "default_profile_id", "created_at", "last_login_at"],
+            [
+                "id",
+                "username",
+                "oidc_issuer",
+                "oidc_subject",
+                "email",
+                "display_name",
+                "password_hash",
+                "role",
+                "theme_preference",
+                "measurement_system",
+                "default_profile_id",
+                "created_at",
+                "last_login_at",
+            ],
             snapshot["users"],
         )
         _copy_rows(
             target_conn,
             "profiles",
-            ["id", "owner_user_id", "name", "color", "home_country_code", "is_public", "created_at"],
+            [
+                "id",
+                "owner_user_id",
+                "name",
+                "color",
+                "home_country_code",
+                "is_public",
+                "created_at",
+            ],
             snapshot["profiles"],
         )
         _copy_rows(
@@ -150,7 +196,16 @@ def _migrate_database_snapshot(target_backend: str, target_settings: Dict[str, A
         _copy_rows(
             target_conn,
             "trip_logs",
-            ["id", "profile_id", "flown_on", "origin_place_id", "destination_place_id", "layover_place_ids", "estimated_miles", "created_at"],
+            [
+                "id",
+                "profile_id",
+                "flown_on",
+                "origin_place_id",
+                "destination_place_id",
+                "layover_place_ids",
+                "estimated_miles",
+                "created_at",
+            ],
             snapshot["trip_logs"],
         )
         _copy_rows(
@@ -167,16 +222,16 @@ def _migrate_database_snapshot(target_backend: str, target_settings: Dict[str, A
 
 
 __all__ = [
-    '_get_app_settings',
-    'SECRET_SETTING_KEYS',
-    'SECRET_PLACEHOLDER',
-    '_masked_settings',
-    '_resolve_secret_placeholders',
-    '_set_app_settings',
-    '_list_table_rows',
-    '_same_backend_target',
-    '_clear_target_tables',
-    '_copy_rows',
-    '_reset_postgres_sequence',
-    '_migrate_database_snapshot',
+    "_get_app_settings",
+    "SECRET_SETTING_KEYS",
+    "SECRET_PLACEHOLDER",
+    "_masked_settings",
+    "_resolve_secret_placeholders",
+    "_set_app_settings",
+    "_list_table_rows",
+    "_same_backend_target",
+    "_clear_target_tables",
+    "_copy_rows",
+    "_reset_postgres_sequence",
+    "_migrate_database_snapshot",
 ]

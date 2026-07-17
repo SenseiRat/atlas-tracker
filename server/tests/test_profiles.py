@@ -1,4 +1,5 @@
 """Profile CRUD, ownership, and visibility."""
+
 from __future__ import annotations
 
 from conftest import create_profile, register_user

@@ -19,7 +19,8 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -216,12 +217,13 @@ POSTGRES_INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_trip_logs_profile_id ON trip_logs (profile_id)",
 ]
 
+
 class DBResult:
     def __init__(self, cursor: Any):
         self._cursor = cursor
 
     @property
-    def lastrowid(self) -> Optional[int]:
+    def lastrowid(self) -> int | None:
         if hasattr(self._cursor, "lastrowid"):
             return self._cursor.lastrowid
         if hasattr(self._cursor, "fetchone"):
@@ -235,8 +237,9 @@ class DBResult:
     def fetchone(self) -> Any:
         return self._cursor.fetchone()
 
-    def fetchall(self) -> List[Any]:
+    def fetchall(self) -> list[Any]:
         return self._cursor.fetchall()
+
 
 class DBConnection:
     def __init__(self, conn: Any, backend: str):
@@ -248,32 +251,34 @@ class DBConnection:
             return query.replace("?", "%s")
         return query
 
-    def execute(self, query: str, params: Tuple[Any, ...] | List[Any] = ()) -> DBResult:
+    def execute(self, query: str, params: tuple[Any, ...] | list[Any] = ()) -> DBResult:
         if self._backend == "postgres":
             cursor = self._conn.cursor()
             cursor.execute(self._format_query(query), params)
             return DBResult(cursor)
         return DBResult(self._conn.execute(query, params))
 
-    def executemany(self, query: str, params_seq: List[Tuple[Any, ...]]) -> None:
+    def executemany(self, query: str, params_seq: list[tuple[Any, ...]]) -> None:
         if self._backend == "postgres":
             cursor = self._conn.cursor()
             cursor.executemany(self._format_query(query), params_seq)
             return
         self._conn.executemany(query, params_seq)
 
+
 DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 if psycopg is not None:
     DB_INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg.IntegrityError)
 
-def _connect_db(backend: str, settings: Optional[Dict[str, Any]] = None) -> Any:
+
+def _connect_db(backend: str, settings: dict[str, Any] | None = None) -> Any:
     config = settings or {}
     if backend == "postgres":
         if psycopg is None:
             raise RuntimeError("psycopg is required when using postgres")
         port_raw = str(config.get("db_port") or DB_PORT).strip()
-        conn_kwargs: Dict[str, Any] = {
+        conn_kwargs: dict[str, Any] = {
             "host": str(config.get("db_host") or DB_HOST).strip(),
             "port": int(port_raw or DB_PORT),
             "dbname": str(config.get("db_name") or DB_NAME).strip(),
@@ -285,7 +290,9 @@ def _connect_db(backend: str, settings: Optional[Dict[str, Any]] = None) -> Any:
         if password:
             conn_kwargs["password"] = password
         if not conn_kwargs["host"] or not conn_kwargs["dbname"]:
-            raise HTTPException(status_code=400, detail="Postgres host and database name are required")
+            raise HTTPException(
+                status_code=400, detail="Postgres host and database name are required"
+            )
         return psycopg.connect(**conn_kwargs)
 
     sqlite_path_raw = str(config.get("sqlite_db_path") or DB_PATH).strip()
@@ -300,6 +307,7 @@ def _connect_db(backend: str, settings: Optional[Dict[str, Any]] = None) -> Any:
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
+
 @contextmanager
 def get_db() -> Iterator[DBConnection]:
     conn = _connect_db(DB_BACKEND)
@@ -312,8 +320,11 @@ def get_db() -> Iterator[DBConnection]:
     finally:
         conn.close()
 
+
 @contextmanager
-def get_db_for_backend(backend: str, settings: Optional[Dict[str, Any]] = None) -> Iterator[DBConnection]:
+def get_db_for_backend(
+    backend: str, settings: dict[str, Any] | None = None
+) -> Iterator[DBConnection]:
     conn = _connect_db(backend, settings)
     try:
         yield DBConnection(conn, backend)
@@ -324,9 +335,14 @@ def get_db_for_backend(backend: str, settings: Optional[Dict[str, Any]] = None) 
     finally:
         conn.close()
 
+
 def _ensure_schema(conn: DBConnection, backend: str) -> None:
-    schema_statements = POSTGRES_SCHEMA_STATEMENTS if backend == "postgres" else SQLITE_SCHEMA_STATEMENTS
-    index_statements = POSTGRES_INDEX_STATEMENTS if backend == "postgres" else SQLITE_INDEX_STATEMENTS
+    schema_statements = (
+        POSTGRES_SCHEMA_STATEMENTS if backend == "postgres" else SQLITE_SCHEMA_STATEMENTS
+    )
+    index_statements = (
+        POSTGRES_INDEX_STATEMENTS if backend == "postgres" else SQLITE_INDEX_STATEMENTS
+    )
     for statement in schema_statements:
         conn.execute(statement)
     for statement in index_statements:
@@ -361,7 +377,9 @@ def _ensure_schema(conn: DBConnection, backend: str) -> None:
     if "theme_preference" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN theme_preference TEXT NOT NULL DEFAULT 'dark'")
     if "measurement_system" not in user_columns:
-        conn.execute("ALTER TABLE users ADD COLUMN measurement_system TEXT NOT NULL DEFAULT 'imperial'")
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN measurement_system TEXT NOT NULL DEFAULT 'imperial'"
+        )
     if "default_profile_id" not in user_columns:
         if backend == "postgres":
             conn.execute("ALTER TABLE users ADD COLUMN default_profile_id BIGINT")
@@ -394,13 +412,17 @@ def _ensure_schema(conn: DBConnection, backend: str) -> None:
         "UPDATE users SET measurement_system = 'imperial' WHERE measurement_system IS NULL OR TRIM(measurement_system) = ''"
     )
 
+
 def init_db() -> None:
     if DB_BACKEND == "sqlite":
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
         _ensure_schema(conn, DB_BACKEND)
 
-def _accessible_profile_filter_sql(profile_alias: str, user_id: Optional[int]) -> Tuple[str, Tuple[Any, ...]]:
+
+def _accessible_profile_filter_sql(
+    profile_alias: str, user_id: int | None
+) -> tuple[str, tuple[Any, ...]]:
     prefix = f"{profile_alias}." if profile_alias else ""
     if user_id is None:
         return f"{prefix}is_public = ?", (True,)
@@ -408,17 +430,17 @@ def _accessible_profile_filter_sql(profile_alias: str, user_id: Optional[int]) -
 
 
 __all__ = [
-    'SQLITE_SCHEMA_STATEMENTS',
-    'SQLITE_INDEX_STATEMENTS',
-    'POSTGRES_SCHEMA_STATEMENTS',
-    'POSTGRES_INDEX_STATEMENTS',
-    'DBResult',
-    'DBConnection',
-    'DB_INTEGRITY_ERRORS',
-    '_connect_db',
-    'get_db',
-    'get_db_for_backend',
-    '_ensure_schema',
-    'init_db',
-    '_accessible_profile_filter_sql',
+    "SQLITE_SCHEMA_STATEMENTS",
+    "SQLITE_INDEX_STATEMENTS",
+    "POSTGRES_SCHEMA_STATEMENTS",
+    "POSTGRES_INDEX_STATEMENTS",
+    "DBResult",
+    "DBConnection",
+    "DB_INTEGRITY_ERRORS",
+    "_connect_db",
+    "get_db",
+    "get_db_for_backend",
+    "_ensure_schema",
+    "init_db",
+    "_accessible_profile_filter_sql",
 ]

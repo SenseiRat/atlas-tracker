@@ -1,4 +1,5 @@
 """Auth and session behavior."""
+
 from __future__ import annotations
 
 

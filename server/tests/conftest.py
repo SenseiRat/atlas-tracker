@@ -5,6 +5,7 @@ so the fixture environment must be in place before the app module is
 imported. Everything below therefore sets env vars first and imports the
 app lazily inside the session fixture.
 """
+
 from __future__ import annotations
 
 import importlib
