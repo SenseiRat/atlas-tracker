@@ -100,24 +100,13 @@ On each push to `main` the same image is pushed under three tags:
 
 Gitea is the hosting source of truth; GitHub is a read-only public mirror. The
 sync is **purely outbound** — Gitea pushes up to GitHub, GitHub never connects
-down. Two ways to do it (this repo ships the second):
+down. Mirroring is handled by Gitea's built-in push mirror, not by CI:
 
-1. **Built-in push mirror (no CI):** *Repo Settings → Repository → Mirror
-   Settings → Push mirror* — add `https://github.com/<owner>/<repo>.git`, a
-   GitHub PAT as the password, and tick *sync on commit*. Handles all refs
-   **including branch deletions** automatically.
-2. **Pipeline mirror** ([`.gitea/workflows/mirror.yml`](../.gitea/workflows/mirror.yml)):
-   on every branch/tag push, force-pushes the pushed ref to GitHub. Versioned
-   with the repo and visible in the Actions log, but does not propagate branch
-   deletions (deletes don't trigger a push event).
-
-Pipeline mirror setup:
-
-- Secret **`MIRROR_TOKEN`** — GitHub fine-grained PAT with *Contents: read and
-  write* on the mirror repo (classic: `repo` scope). Gitea reserves the
-  `GITHUB_`/`GITEA_` name prefixes for secrets, hence the name.
-- Variable **`MIRROR_REPO`** (optional) — target `owner/repo`; defaults to
-  `SenseiRat/trip-tracker`.
+*Repo Settings → Repository → Mirror Settings → Push mirror* — add
+`https://github.com/<owner>/<repo>.git`, a GitHub PAT (fine-grained with
+*Contents: read and write*, or classic `repo` scope) as the password, and tick
+*sync on commit*. This handles all refs **including branch deletions**
+automatically, with zero CI involvement.
 
 ## Notes / possible extensions
 
