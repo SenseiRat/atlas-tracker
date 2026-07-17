@@ -1,4 +1,4 @@
-"""Test harness for the World Visited Tracker API.
+"""Test harness for the AtlasTracker API.
 
 Configuration is read from the environment at import time in server.main,
 so the fixture environment must be in place before the app module is

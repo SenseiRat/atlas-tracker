@@ -64,7 +64,8 @@ function App() {
     handleLogout,
     saveAccount,
   } = session;
-  const { themeMode, setThemeMode, measurementSystem, setMeasurementSystem } = useAppPreferences(authSession);
+  const { themeMode, setThemeMode, measurementSystem, setMeasurementSystem, mapLabelLanguage, setMapLabelLanguage } =
+    useAppPreferences(authSession);
   const {
     places,
     sortedPlaces,
@@ -72,8 +73,9 @@ function App() {
     airportLabelById,
     airportAutocomplete,
     resolveAirportId,
-    siteCountries,
+    siteCountryOptions,
     countryNameByCode,
+    countryCodeByName,
     stateNameByCountryAndCode,
     pointLookup,
   } = usePlaces({ enabled: !authLoading, setUiError });
@@ -128,6 +130,8 @@ function App() {
     placeSearchTextByType,
     visitedIds,
     visitedCountryCodes,
+    countryCodeByName,
+    countryNameByCode,
     airportAutocomplete,
   });
   const [mainView, setMainView] = useState<MainView>('map');
@@ -212,7 +216,7 @@ function App() {
           focusOnPlace={focusOnPlace}
           airportLabelById={airportLabelById}
           resolveAirportId={resolveAirportId}
-          siteCountries={siteCountries}
+          siteCountryOptions={siteCountryOptions}
           countryNameByCode={countryNameByCode}
           stateNameByCountryAndCode={stateNameByCountryAndCode}
         />
@@ -273,6 +277,7 @@ function App() {
             ref={mapViewRef}
             authLoading={authLoading}
             themeMode={themeMode}
+            mapLabelLanguage={mapLabelLanguage}
             mainView={mainView}
             showTripRoutes={showTripRoutes}
             profileId={profileId}
@@ -361,6 +366,8 @@ function App() {
         setThemeMode={setThemeMode}
         measurementSystem={measurementSystem}
         setMeasurementSystem={setMeasurementSystem}
+        mapLabelLanguage={mapLabelLanguage}
+        setMapLabelLanguage={setMapLabelLanguage}
         ownedProfiles={ownedProfiles}
         publicProfiles={publicProfiles}
         handleAccountSave={handleAccountSave}

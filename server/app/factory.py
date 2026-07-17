@@ -35,7 +35,7 @@ from server.app.routes import router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="World Visited Tracker")
+    app = FastAPI(title="AtlasTracker")
     app.include_router(router)
 
     @app.on_event("startup")

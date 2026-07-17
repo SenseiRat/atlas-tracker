@@ -1,7 +1,7 @@
 import { Modal } from './ui/Modal';
 import { ProfileColorField } from './ProfileColorField';
 import type { useAdmin } from '../hooks/useAdmin';
-import type { AuthSession, MeasurementSystem, Place, Profile, ThemeMode } from '../types';
+import type { AuthSession, MapLabelLanguage, MeasurementSystem, Place, Profile, ThemeMode } from '../types';
 
 type SettingsModalProps = {
   open: boolean;
@@ -20,6 +20,8 @@ type SettingsModalProps = {
   setThemeMode: (value: ThemeMode) => void;
   measurementSystem: MeasurementSystem;
   setMeasurementSystem: (value: MeasurementSystem) => void;
+  mapLabelLanguage: MapLabelLanguage;
+  setMapLabelLanguage: (value: MapLabelLanguage) => void;
   ownedProfiles: Profile[];
   publicProfiles: Profile[];
   handleAccountSave: () => void;
@@ -47,6 +49,8 @@ export function SettingsModal({
   setThemeMode,
   measurementSystem,
   setMeasurementSystem,
+  mapLabelLanguage,
+  setMapLabelLanguage,
   ownedProfiles,
   publicProfiles,
   handleAccountSave,
@@ -191,6 +195,16 @@ export function SettingsModal({
                   >
                     <option value="imperial">Imperial</option>
                     <option value="metric">Metric</option>
+                  </select>
+                </label>
+                <label>
+                  Map labels
+                  <select
+                    value={mapLabelLanguage}
+                    onChange={(event) => setMapLabelLanguage(event.target.value as MapLabelLanguage)}
+                  >
+                    <option value="local">Local place names</option>
+                    <option value="english">English place names</option>
                   </select>
                 </label>
               </div>

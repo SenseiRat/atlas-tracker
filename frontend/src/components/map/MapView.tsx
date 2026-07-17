@@ -4,9 +4,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../../api/client';
 import { contrastingColor, createProfileVisuals, defaultProfileColor, mixHexColors } from '../../lib/colors';
 import { getSiteSourceConfig } from '../../lib/sites';
-import type { ActiveProfile, MainView, MapFeatureCollection, Place, ThemeMode, TripLog, Visit } from '../../types';
+import type { ActiveProfile, MainView, MapFeatureCollection, MapLabelLanguage, Place, ThemeMode, TripLog, Visit } from '../../types';
 import {
   baseStyle,
+  basemapTilesByLabelLanguage,
   mapThemeTokens,
   emptyFeatureCollection,
   fitMapToFeature,
@@ -27,6 +28,7 @@ type ProfileVisuals = ReturnType<typeof createProfileVisuals>;
 type MapViewProps = {
   authLoading: boolean;
   themeMode: ThemeMode;
+  mapLabelLanguage: MapLabelLanguage;
   mainView: MainView;
   showTripRoutes: boolean;
   profileId: ActiveProfile;
@@ -50,6 +52,7 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   {
     authLoading,
     themeMode,
+    mapLabelLanguage,
     mainView,
     showTripRoutes,
     profileId,
@@ -84,12 +87,44 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         zoom: 1.4,
         maxZoom: 7,
         minZoom: 1,
+        // The atlas is a flat north-up map: no rotate/pitch anywhere.
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
       });
     } catch (error) {
       setUiError('Map failed to initialize.');
       console.error(error);
       return;
     }
+
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+
+    // Right-button drag pans the map (instead of the MapLibre default of
+    // rotating/pitching it).
+    const canvas = map.getCanvas();
+    let rightDragPoint: { x: number; y: number } | null = null;
+    const onContextMenu = (event: MouseEvent) => event.preventDefault();
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 2) return;
+      event.preventDefault();
+      rightDragPoint = { x: event.clientX, y: event.clientY };
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (!rightDragPoint || !mapRef.current) return;
+      const dx = rightDragPoint.x - event.clientX;
+      const dy = rightDragPoint.y - event.clientY;
+      rightDragPoint = { x: event.clientX, y: event.clientY };
+      mapRef.current.panBy([dx, dy], { duration: 0 });
+    };
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button === 2) rightDragPoint = null;
+    };
+    canvas.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
@@ -291,6 +326,10 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
     mapRef.current = map;
     return () => {
+      canvas.removeEventListener('contextmenu', onContextMenu);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
       map.off('load', handleLoad);
       map.off('error', handleError);
       mapRef.current = null;
@@ -550,6 +589,13 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (!map || !isMapReady) return;
     map.setLayoutProperty('trip-routes-line', 'visibility', showTripRoutes ? 'visible' : 'none');
   }, [isMapReady, showTripRoutes]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapReady) return;
+    const source = map.getSource('osm') as maplibregl.RasterTileSource | undefined;
+    source?.setTiles(basemapTilesByLabelLanguage[mapLabelLanguage]);
+  }, [isMapReady, mapLabelLanguage]);
 
   useEffect(() => {
     const map = mapRef.current;

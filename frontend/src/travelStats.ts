@@ -151,6 +151,7 @@ export type EvaluatedTravelStat = TravelStatDefinition & {
   displayValue: string;
   detail?: string;
   sentence: string;
+  quadrants?: HemisphereQuadrant[];
 };
 
 export type TravelStatsModel = {
@@ -186,10 +187,13 @@ type ExtremePlace = {
   value: number;
 };
 
+export type HemisphereQuadrant = 'NE' | 'NW' | 'SE' | 'SW';
+
 type TravelStatResult = {
   displayValue: string;
   detail?: string;
   sentence: string;
+  quadrants?: HemisphereQuadrant[];
 };
 
 type DerivedContext = {
@@ -250,6 +254,7 @@ type DerivedContext = {
   totalLatitudeRange: number | null;
   totalLongitudeRange: number | null;
   hemisphereCoverage: string;
+  hemisphereQuadrants: HemisphereQuadrant[];
   unescoVisited: number;
   michelinVisited: number;
   darkSkyVisited: number;
@@ -721,7 +726,7 @@ function buildContext(
   let lowestElevation: ExtremePlace | null = null;
   const latitudes: number[] = [];
   const longitudes: number[] = [];
-  const hemisphereParts = new Set<string>();
+  const hemisphereQuadrantSet = new Set<HemisphereQuadrant>();
 
   destinationPlaces.forEach((place) => {
     const countryCode = normalizeCode(place.country_code);
@@ -746,13 +751,14 @@ function buildContext(
       latitudes.push(place.lat);
       if (!northernmost || place.lat > northernmost.value) northernmost = { name: place.name, value: place.lat };
       if (!southernmost || place.lat < southernmost.value) southernmost = { name: place.name, value: place.lat };
-      hemisphereParts.add(place.lat >= 0 ? 'Northern' : 'Southern');
     }
     if (place.lon !== undefined) {
       longitudes.push(place.lon);
       if (!easternmost || place.lon > easternmost.value) easternmost = { name: place.name, value: place.lon };
       if (!westernmost || place.lon < westernmost.value) westernmost = { name: place.name, value: place.lon };
-      hemisphereParts.add(place.lon >= 0 ? 'Eastern' : 'Western');
+    }
+    if (place.lat !== undefined && place.lon !== undefined) {
+      hemisphereQuadrantSet.add(`${place.lat >= 0 ? 'N' : 'S'}${place.lon >= 0 ? 'E' : 'W'}` as HemisphereQuadrant);
     }
     if (typeof place.elevation_m === 'number') {
       if (!highestElevation || place.elevation_m > highestElevation.value) highestElevation = { name: place.name, value: place.elevation_m };
@@ -763,7 +769,13 @@ function buildContext(
   const totalLatitudeRange = latitudes.length >= 2 ? Math.max(...latitudes) - Math.min(...latitudes) : latitudes.length === 1 ? 0 : null;
   const totalLongitudeRange =
     longitudes.length >= 2 ? Math.max(...longitudes) - Math.min(...longitudes) : longitudes.length === 1 ? 0 : null;
-  const hemisphereCoverage = hemisphereParts.size > 0 ? Array.from(hemisphereParts).join(' + ') : 'Unavailable';
+  const hemisphereQuadrants = (['NE', 'NW', 'SE', 'SW'] as const).filter((quadrant) => hemisphereQuadrantSet.has(quadrant));
+  const hemisphereCoverage =
+    hemisphereQuadrants.length === 4
+      ? 'All four hemispheres'
+      : hemisphereQuadrants.length > 0
+        ? `${hemisphereQuadrants.map((quadrant) => `${quadrant} hemisphere`).join(', ')}`
+        : 'Unavailable';
 
   const repeatDestinationGroups = Array.from(destinationCounts.values()).filter((count) => count > 1).length;
   const uniqueDestinationGroups = destinationCounts.size;
@@ -844,6 +856,7 @@ function buildContext(
     totalLatitudeRange,
     totalLongitudeRange,
     hemisphereCoverage,
+    hemisphereQuadrants,
     unescoVisited,
     michelinVisited,
     darkSkyVisited,
@@ -1021,7 +1034,11 @@ const calculators: Record<TravelStatSelector, (context: DerivedContext) => Trave
   timezones_visited: (context) => makeCountResult('Number of time zones visited', context.timezonesVisited.size),
   total_latitude_range: (context) => (context.totalLatitudeRange === null ? null : { displayValue: `${context.totalLatitudeRange.toFixed(2)}°`, sentence: `Your total latitude range covered is ${context.totalLatitudeRange.toFixed(2)}°.` }),
   total_longitude_range: (context) => (context.totalLongitudeRange === null ? null : { displayValue: `${context.totalLongitudeRange.toFixed(2)}°`, sentence: `Your total longitude range covered is ${context.totalLongitudeRange.toFixed(2)}°.` }),
-  hemisphere_coverage: (context) => ({ displayValue: context.hemisphereCoverage, sentence: `Hemisphere coverage: ${context.hemisphereCoverage}.` }),
+  hemisphere_coverage: (context) => ({
+    displayValue: context.hemisphereCoverage,
+    sentence: `Hemisphere coverage: ${context.hemisphereCoverage}.`,
+    quadrants: context.hemisphereQuadrants,
+  }),
   border_crossings_by_air: (context) => makeCountResult('Border crossings by air', context.borderCrossingsByAir),
   countries_revisited_after_first_visit: (context) => (context.countriesRevisitedAfterFirstVisit === null ? null : makeCountResult('Countries revisited after first visit', context.countriesRevisitedAfterFirstVisit)),
   michelin_countries: (context) => makeCountResult('Countries with Michelin-starred restaurant visits', context.michelinCountries.size),
@@ -1158,7 +1175,7 @@ export function buildTravelStatsModel(args: {
         try {
           const result = calculators[definition.selector](context);
           if (!result) return null;
-          return { ...definition, displayValue: result.displayValue, detail: result.detail, sentence: result.sentence };
+          return { ...definition, displayValue: result.displayValue, detail: result.detail, sentence: result.sentence, quadrants: result.quadrants };
         } catch (error) {
           console.error(`Travel stat "${definition.id}" failed to evaluate.`, error);
           return null;

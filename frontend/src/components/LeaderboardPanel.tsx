@@ -72,14 +72,17 @@ export function LeaderboardPanel({ stats, measurementSystem }: LeaderboardPanelP
             {(stats?.leaderboard.top_overall ?? []).map((entry, index) => (
               <div key={entry.profile_id} className="leaderboard-row">
                 <span className="leaderboard-rank">#{index + 1}</span>
-                <div>
+                <div className="leaderboard-entry">
                   <strong>{entry.name}</strong>
                   <small>
-                    {entry.countries ?? 0} countries | {formatDistance(entry.miles ?? 0, measurementSystem)} |{' '}
-                    {entry.achievements ?? 0} achievements
+                    {(entry.countries ?? 0).toLocaleString()} countries · {formatDistance(entry.miles ?? 0, measurementSystem)} ·{' '}
+                    {(entry.achievements ?? 0).toLocaleString()} achievements
                   </small>
                 </div>
-                <span>{Math.round(entry.overall_score ?? 0).toLocaleString()}</span>
+                <span className="leaderboard-score">
+                  {Math.round(entry.overall_score ?? 0).toLocaleString()}
+                  <small>pts</small>
+                </span>
               </div>
             ))}
           </div>
@@ -97,8 +100,8 @@ export function LeaderboardPanel({ stats, measurementSystem }: LeaderboardPanelP
               {category.leaders.map((entry, index) => (
                 <div key={`${category.id}-${entry.profile_id}`} className="leaderboard-row">
                   <span className="leaderboard-rank">#{index + 1}</span>
-                  <strong>{entry.name}</strong>
-                  <span>{formatLeaderboardValue(category.id, entry.value)}</span>
+                  <strong className="leaderboard-name">{entry.name}</strong>
+                  <span className="leaderboard-score">{formatLeaderboardValue(category.id, entry.value)}</span>
                 </div>
               ))}
             </div>

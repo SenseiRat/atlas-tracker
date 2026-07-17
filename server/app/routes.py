@@ -304,6 +304,26 @@ async def get_profiles(request: Request) -> List[Dict[str, Any]]:
         ).fetchall()
     return [_normalize_profile_row(row, user_id) for row in rows]
 
+def _mark_home_country_visited(conn, profile_id: int, home_country_code: Optional[str]) -> None:
+    """Seed a visit for the profile's home country: everyone has been there."""
+    if not home_country_code:
+        return
+    code = str(home_country_code).strip().upper()
+    row = conn.execute(
+        "SELECT id FROM places WHERE type = 'country' AND (id = ? OR country_code = ?) LIMIT 1",
+        (f"country-{code}", code),
+    ).fetchone()
+    if not row:
+        return
+    conn.execute(
+        """
+        INSERT INTO visits (profile_id, place_id, visited_at, trip_id, created_at)
+        VALUES (?, ?, NULL, NULL, ?)
+        ON CONFLICT (profile_id, place_id) DO NOTHING
+        """,
+        (profile_id, str(row["id"]), current_timestamp()),
+    )
+
 @router.post("/api/profiles")
 async def create_profile(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     name = (payload.get("name") or "").strip()
@@ -324,6 +344,7 @@ async def create_profile(payload: Dict[str, Any], request: Request) -> Dict[str,
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
         inserted_row = cursor.fetchone()
         profile_id = int(inserted_row["id"] if isinstance(inserted_row, dict) else inserted_row[0])
+        _mark_home_country_visited(conn, profile_id, home_country_code)
         row = conn.execute(
             "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
             (profile_id,),
@@ -362,6 +383,9 @@ async def update_profile(profile_id: int, payload: Dict[str, Any], request: Requ
             )
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
+        previous_home_code = normalize_profile_home_country_code(profile["home_country_code"]) if profile["home_country_code"] else None
+        if home_country_code and home_country_code != previous_home_code:
+            _mark_home_country_visited(conn, profile_id, home_country_code)
         row = conn.execute(
             "SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?",
             (profile_id,),
@@ -509,6 +533,7 @@ async def admin_create_profile(payload: Dict[str, Any], request: Request) -> Dic
         except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(status_code=400, detail="Profile already exists") from exc
         profile_id = int(inserted["id"] if isinstance(inserted, dict) else inserted[0])
+        _mark_home_country_visited(conn, profile_id, home_country_code)
         row = conn.execute("SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
     return _normalize_profile_row(row, owner_user_id)
 
@@ -530,6 +555,9 @@ async def admin_update_profile(profile_id: int, payload: Dict[str, Any], request
             "UPDATE profiles SET name = ?, color = ?, home_country_code = ?, is_public = ?, owner_user_id = ? WHERE id = ?",
             (name, color, home_country_code, is_public, owner_user_id, profile_id),
         )
+        previous_home_code = normalize_profile_home_country_code(row["home_country_code"]) if row["home_country_code"] else None
+        if home_country_code and home_country_code != previous_home_code:
+            _mark_home_country_visited(conn, profile_id, home_country_code)
         updated = conn.execute("SELECT id, name, color, home_country_code, is_public, owner_user_id FROM profiles WHERE id = ?", (profile_id,)).fetchone()
     return _normalize_profile_row(updated, owner_user_id if isinstance(owner_user_id, int) else None)
 

@@ -4,6 +4,7 @@ export type ListScope = 'all' | 'visited' | 'unvisited' | 'visited_countries';
 export type MainView = 'map' | 'trips' | 'stats' | 'achievements' | 'leaderboard';
 export type MeasurementSystem = 'metric' | 'imperial';
 export type ThemeMode = 'dark' | 'light';
+export type MapLabelLanguage = 'local' | 'english';
 
 export type Place = {
   id: string;

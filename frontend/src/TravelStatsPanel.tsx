@@ -1,8 +1,25 @@
-import { type TravelStatsModel } from './travelStats';
+import { type HemisphereQuadrant, type TravelStatsModel } from './travelStats';
 
 type TravelStatsPanelProps = {
   model: TravelStatsModel;
 };
+
+/** Compass-style 2x2 grid showing which hemisphere quadrants were visited. */
+function HemisphereGrid({ quadrants }: { quadrants: HemisphereQuadrant[] }) {
+  const covered = new Set(quadrants);
+  return (
+    <span className="hemisphere-grid" role="img" aria-label={`Hemispheres visited: ${quadrants.join(', ') || 'none'}`}>
+      {(['NW', 'NE', 'SW', 'SE'] as const).map((quadrant) => (
+        <span
+          key={quadrant}
+          className={`hemisphere-grid__cell${covered.has(quadrant) ? ' hemisphere-grid__cell--covered' : ''}`}
+        >
+          {quadrant}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function TravelStatsPanel({ model }: TravelStatsPanelProps) {
   if (model.heroStats.length === 0 && model.highlightStats.length === 0 && model.sections.length === 0) {
@@ -72,7 +89,11 @@ export function TravelStatsPanel({ model }: TravelStatsPanelProps) {
                         <p>{stat.description}</p>
                       </div>
                       <div className="travel-stat-row__value">
-                        <strong>{stat.displayValue}</strong>
+                        {stat.quadrants && stat.quadrants.length > 0 ? (
+                          <HemisphereGrid quadrants={stat.quadrants} />
+                        ) : (
+                          <strong>{stat.displayValue}</strong>
+                        )}
                         {stat.detail && <small>{stat.detail}</small>}
                       </div>
                     </article>

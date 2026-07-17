@@ -78,18 +78,53 @@ def _load_source_payloads(source_keys: Optional[Set[str]] = None) -> Dict[str, A
         payloads[source_key] = config.get("empty_payload", {"features": []})
     return payloads
 
+# ISO-2 codes of dependent territories that have no standalone feature in the
+# Natural Earth admin-0 dataset. Cities/airports carrying these codes are
+# associated with the parent country so they are not orphaned from the
+# country list. Applied only when nothing else already claims the code.
+TERRITORY_ISO2_TO_PARENT_ISO3 = {
+    "GF": "FRA",  # French Guiana
+    "GP": "FRA",  # Guadeloupe
+    "MQ": "FRA",  # Martinique
+    "RE": "FRA",  # Réunion
+    "YT": "FRA",  # Mayotte
+    "BL": "FRA",  # Saint Barthélemy
+    "MF": "FRA",  # Saint Martin
+    "WF": "FRA",  # Wallis and Futuna
+    "SJ": "NOR",  # Svalbard and Jan Mayen
+    "BQ": "NLD",  # Caribbean Netherlands
+    "CC": "AUS",  # Cocos (Keeling) Islands
+    "CX": "AUS",  # Christmas Island
+    "GI": "GBR",  # Gibraltar
+    "UM": "USA",  # U.S. Minor Outlying Islands
+}
+
+def _is_iso2(code: str) -> bool:
+    return len(code) == 2 and code.isalpha()
+
 def _collect_country_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:
     rows: List[tuple] = []
     source_state: Dict[str, Tuple[str, str]] = {}
     iso2_to_iso3: Dict[str, str] = context.setdefault("iso2_to_iso3", {})
     country_name_to_iso3: Dict[str, str] = context.setdefault("country_name_to_iso3", {})
+    # Natural Earth marks some sovereign states (France, Norway, Kosovo,
+    # Taiwan, ...) with ISO_A2 "-99"; ISO_A2_EH carries the usable code. Those
+    # secondary codes are merged after the loop so a real ISO_A2 always wins
+    # (e.g. Australia's "AU" over Indian Ocean Territories' ISO_A2_EH "AU").
+    fallback_iso2_to_iso3: Dict[str, str] = {}
+    seen_country_codes: Set[str] = set()
 
     for feature in payload.get("features", []):
         props = feature.get("properties", {})
         country_code = str(props.get("ADM0_A3") or props.get("ISO_A3") or props.get("NAME") or "").upper()
         iso2 = str(props.get("ISO_A2") or "").upper()
-        if iso2 and country_code:
-            iso2_to_iso3[iso2] = country_code
+        iso2_eh = str(props.get("ISO_A2_EH") or "").upper()
+        if country_code:
+            seen_country_codes.add(country_code)
+            if _is_iso2(iso2):
+                iso2_to_iso3[iso2] = country_code
+            elif _is_iso2(iso2_eh):
+                fallback_iso2_to_iso3.setdefault(iso2_eh, country_code)
         if country_code:
             register_country_name_variants(
                 country_name_to_iso3,
@@ -119,6 +154,12 @@ def _collect_country_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[t
             )
         )
         source_state[place_id] = ("countries", hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest())
+
+    for iso2_code, iso3_code in fallback_iso2_to_iso3.items():
+        iso2_to_iso3.setdefault(iso2_code, iso3_code)
+    for iso2_code, iso3_code in TERRITORY_ISO2_TO_PARENT_ISO3.items():
+        if iso3_code in seen_country_codes:
+            iso2_to_iso3.setdefault(iso2_code, iso3_code)
     return rows, source_state
 
 def _collect_state_rows(payload: Any, context: Dict[str, Any]) -> Tuple[List[tuple], Dict[str, Tuple[str, str]]]:

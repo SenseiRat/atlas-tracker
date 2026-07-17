@@ -49,7 +49,10 @@ body {
 
 .app {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* Header row + content row. The content row must be the flexible track so
+     the map keeps the full remaining height even when the sidebar list is
+     short (a filtered list must not shrink the map). */
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
   background: var(--bg);
@@ -527,45 +530,89 @@ body {
   field-sizing: content;
 }
 
-.visited-country-filter {
+.multiselect {
+  position: relative;
+}
+
+.multiselect__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 12ch;
+  max-width: min(100%, 32ch);
+}
+
+.multiselect__trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.multiselect__summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiselect__caret {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.multiselect__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
   display: grid;
   gap: 8px;
   padding: 10px;
-  border: 1px solid var(--border);
+  min-width: min(260px, 70vw);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
 }
 
-.visited-country-filter__header {
+.multiselect__panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--muted);
 }
 
-.visited-country-filter__list {
+.multiselect__options {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  max-height: 220px;
+  gap: 4px;
+  max-height: 240px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.visited-country-option {
+.multiselect__option {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
+  padding: 6px 8px;
   border-radius: 8px;
-  background: var(--card);
   color: var(--text);
   font-size: 0.9rem;
+  cursor: pointer;
 }
 
-.visited-country-option input {
+.multiselect__option:hover {
+  background: var(--card);
+}
+
+.multiselect__option input {
   margin: 0;
 }
 
@@ -1030,6 +1077,35 @@ body {
   font-size: 1.15rem;
 }
 
+.hemisphere-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 34px);
+  grid-auto-rows: 26px;
+  gap: 3px;
+  border-radius: 8px;
+}
+
+.hemisphere-grid__cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--card);
+  opacity: 0.55;
+}
+
+.hemisphere-grid__cell--covered {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+  opacity: 1;
+}
+
 .travel-stats-empty {
   display: grid;
   gap: 8px;
@@ -1261,6 +1337,34 @@ body {
   color: var(--accent);
 }
 
+.leaderboard-entry {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leaderboard-entry strong,
+.leaderboard-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  justify-self: end;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.leaderboard-score small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -1270,7 +1374,6 @@ body {
 }
 
 .theme-toggle {
-  margin-top: 10px;
   background: color-mix(in srgb, var(--panel) 68%, var(--accent) 32%);
   color: var(--text);
   border: 1px solid var(--border-strong);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { tabs } from '../constants';
-import { uniqueSorted } from '../lib/sites';
+import { getSiteCountryKeys } from '../lib/sites';
 import type { Place, PlacesResponse, PlaceType } from '../types';
 
 type UsePlacesOptions = {
@@ -192,11 +192,6 @@ export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
     return airportIdByCode.get(input.toUpperCase()) ?? '';
   };
 
-  const siteCountries = useMemo(
-    () => ['all', ...uniqueSorted(places.site.flatMap((site) => site.countryOrCountries ?? []))],
-    [places.site],
-  );
-
   const countryNameByCode = useMemo(() => {
     const map = new Map<string, string>();
     places.country.forEach((country) => {
@@ -208,6 +203,33 @@ export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
     });
     return map;
   }, [places.country]);
+
+  const countryCodeByName = useMemo(() => {
+    const map = new Map<string, string>();
+    places.country.forEach((country) => {
+      const code = (country.country_code || '').trim().toUpperCase();
+      const name = country.name?.trim().toLowerCase();
+      if (code && name && !map.has(name)) {
+        map.set(name, code);
+      }
+    });
+    return map;
+  }, [places.country]);
+
+  // Every country a site belongs to, deduped across the mixed name/ISO-code
+  // spellings in the site datasets, labeled with the proper country name.
+  const siteCountryOptions = useMemo(() => {
+    const labelByKey = new Map<string, string>();
+    places.site.forEach((site) => {
+      getSiteCountryKeys(site, countryCodeByName, countryNameByCode).forEach((key) => {
+        if (labelByKey.has(key)) return;
+        labelByKey.set(key, countryNameByCode.get(key) ?? (key === key.toUpperCase() ? key : key.replace(/\b\w/g, (c) => c.toUpperCase())));
+      });
+    });
+    return Array.from(labelByKey.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [places.site, countryCodeByName, countryNameByCode]);
 
   const stateNameByCountryAndCode = useMemo(() => {
     const map = new Map<string, string>();
@@ -237,8 +259,9 @@ export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
     airportIdByCode,
     airportAutocomplete,
     resolveAirportId,
-    siteCountries,
+    siteCountryOptions,
     countryNameByCode,
+    countryCodeByName,
     stateNameByCountryAndCode,
     pointLookup,
   };

@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { defaultSiteFilterState } from '../constants';
-import { normalizeSiteSourceType, uniqueSorted } from '../lib/sites';
+import { getSiteCountryKeys, normalizeSiteSourceType, uniqueSorted } from '../lib/sites';
 import type { ListScope, Place, PlaceType, SiteFilterState } from '../types';
 
 export const MAX_VISIBLE_LIST_ITEMS = 500;
@@ -11,6 +11,8 @@ type UsePlaceFiltersOptions = {
   placeSearchTextByType: Record<PlaceType, Map<string, string>>;
   visitedIds: Set<string>;
   visitedCountryCodes: Set<string>;
+  countryCodeByName: Map<string, string>;
+  countryNameByCode: Map<string, string>;
   airportAutocomplete: (input: string) => Place[];
 };
 
@@ -24,6 +26,8 @@ export function usePlaceFilters({
   placeSearchTextByType,
   visitedIds,
   visitedCountryCodes,
+  countryCodeByName,
+  countryNameByCode,
   airportAutocomplete,
 }: UsePlaceFiltersOptions) {
   const [activeTab, setActiveTab] = useState<PlaceType>('country');
@@ -67,13 +71,23 @@ export function usePlaceFilters({
   }, [airportAutocomplete, deferredSearch.airport]);
 
   const getScopeOptions = (type: PlaceType) => {
+    // Name the place type in each option so "Visited" can't be misread as
+    // "in visited countries" on the state/city tabs.
+    const nounByType: Record<PlaceType, string> = {
+      country: 'countries',
+      state: 'states & regions',
+      city: 'cities',
+      airport: 'airports',
+      site: 'sites',
+    };
+    const noun = nounByType[type];
     const options: Array<{ value: ListScope; label: string }> = [
-      { value: 'all', label: 'All' },
-      { value: 'visited', label: 'Visited' },
-      { value: 'unvisited', label: 'Unvisited' },
+      { value: 'all', label: `All ${noun}` },
+      { value: 'visited', label: `Visited ${noun}` },
+      { value: 'unvisited', label: `Unvisited ${noun}` },
     ];
     if (type === 'site') {
-      options.push({ value: 'visited_countries', label: 'In visited countries' });
+      options.push({ value: 'visited_countries', label: 'Sites in visited countries' });
     }
     return options;
   };
@@ -105,11 +119,10 @@ export function usePlaceFilters({
       .filter((place) => {
         if (activeTab !== 'site') return true;
         const sourceType = normalizeSiteSourceType(place.sourceType);
-        const sourceCountrySet = new Set((place.countryOrCountries ?? []).map((value) => value.toLowerCase()));
         return (
           (siteFilters.sourceType === 'all' || sourceType === siteFilters.sourceType) &&
           (siteFilters.category === 'all' || (place.type || place.category || '').trim().toLowerCase() === siteFilters.category) &&
-          (siteFilters.country === 'all' || sourceCountrySet.has(siteFilters.country))
+          (siteFilters.country === 'all' || getSiteCountryKeys(place, countryCodeByName, countryNameByCode).has(siteFilters.country))
         );
       })
       .filter((place) => {
@@ -133,6 +146,8 @@ export function usePlaceFilters({
     return filtered;
   }, [
     activeTab,
+    countryCodeByName,
+    countryNameByCode,
     deferredSearch,
     listScope,
     placeSearchTextByType,

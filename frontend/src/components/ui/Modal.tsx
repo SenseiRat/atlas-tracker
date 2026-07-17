@@ -21,6 +21,11 @@ export type ModalProps = {
 export function Modal({ open, onClose, labelledBy, ariaLabel, children, className, closeOnBackdrop = true }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Read onClose through a ref so the focus/keydown effect only re-runs when
+  // `open` changes; parents recreate the callback every render, and re-running
+  // the effect would steal focus back to the first input on every keystroke.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -36,7 +41,7 @@ export function Modal({ open, onClose, labelledBy, ariaLabel, children, classNam
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab' || !dialog) return;
@@ -63,7 +68,7 @@ export function Modal({ open, onClose, labelledBy, ariaLabel, children, classNam
       document.body.style.overflow = overflow;
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -219,15 +219,23 @@ export function fitMapToFeature(map: MapLibreMap, feature: MapFeatureCollection[
   return false;
 }
 
+// Raster basemaps bake their labels into the tiles, so "label language" is a
+// choice between basemaps: OSM standard renders local place names, CARTO
+// Voyager renders English/international labels.
+export const basemapTilesByLabelLanguage: Record<'local' | 'english', string[]> = {
+  local: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+  english: ['https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'],
+};
+
 export const baseStyle = {
   version: 8,
   name: 'Tracker',
   sources: {
     osm: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: basemapTilesByLabelLanguage.local,
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© OpenStreetMap contributors · © CARTO',
       maxzoom: 19,
     },
   },

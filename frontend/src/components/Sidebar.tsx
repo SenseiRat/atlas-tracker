@@ -3,6 +3,7 @@ import { tabs } from '../constants';
 import { siteSourceRegistry, coerceBooleanMetadata, getSiteMetadataValue, getSiteSourceConfig } from '../lib/sites';
 import { formatRegionLabel, formatSiteCategoryLabel } from '../lib/format';
 import { usePlaceFilters, MAX_VISIBLE_LIST_ITEMS } from '../hooks/usePlaceFilters';
+import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
 
 type SidebarProps = {
   filters: ReturnType<typeof usePlaceFilters>;
@@ -13,7 +14,7 @@ type SidebarProps = {
   focusOnPlace: (place: Place) => void;
   airportLabelById: Map<string, string>;
   resolveAirportId: (value: string) => string;
-  siteCountries: string[];
+  siteCountryOptions: Array<{ value: string; label: string }>;
   countryNameByCode: Map<string, string>;
   stateNameByCountryAndCode: Map<string, string>;
 };
@@ -28,7 +29,7 @@ export function Sidebar({
   focusOnPlace,
   airportLabelById,
   resolveAirportId,
-  siteCountries,
+  siteCountryOptions,
   countryNameByCode,
   stateNameByCountryAndCode,
 }: SidebarProps) {
@@ -172,25 +173,39 @@ export function Sidebar({
                   onChange={(event) => setSearch((prev) => ({ ...prev, [activeTab]: event.target.value }))}
                 />
               )}
+              <label className="scope-filter">
+                Scope
+                <select
+                  value={listScope[activeTab]}
+                  onChange={(event) =>
+                    setListScope((prev) => ({
+                      ...prev,
+                      [activeTab]: event.target.value as ListScope,
+                    }))
+                  }
+                >
+                  {getScopeOptions(activeTab).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {(activeTab === 'state' || activeTab === 'city') && (
-                <label className="scope-filter">
-                  Scope
-                  <select
-                    value={listScope[activeTab]}
-                    onChange={(event) =>
-                      setListScope((prev) => ({
-                        ...prev,
-                        [activeTab]: event.target.value as ListScope,
-                      }))
-                    }
-                  >
-                    {getScopeOptions(activeTab).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <MultiSelectDropdown
+                  label="Visited countries"
+                  options={visitedCountryScopeOptions.map((country) => ({ value: country.code, label: country.label }))}
+                  selected={selectedVisitedCountries[activeTab]}
+                  onToggle={(code) => onToggleVisitedCountrySelection(activeTab, code)}
+                  onClear={() =>
+                    setSelectedVisitedCountries((prev) => ({
+                      ...prev,
+                      [activeTab]: [],
+                    }))
+                  }
+                  allLabel="All visited countries"
+                  emptyText="No countries visited yet"
+                />
               )}
               {activeTab === 'site' && (
                 <>
@@ -228,67 +243,15 @@ export function Sidebar({
                       value={siteFilters.country}
                       onChange={(event) => setSiteFilters((prev) => ({ ...prev, country: event.target.value }))}
                     >
-                      {siteCountries.map((country) => (
-                        <option key={country} value={country.toLowerCase()}>
-                          {country === 'all' ? 'All countries' : country}
+                      <option value="all">All countries</option>
+                      {siteCountryOptions.map((country) => (
+                        <option key={country.value} value={country.value}>
+                          {country.label}
                         </option>
                       ))}
                     </select>
                   </label>
                 </>
-              )}
-              {activeTab !== 'state' && activeTab !== 'city' && (
-                <label className="scope-filter">
-                  Scope
-                  <select
-                    value={listScope[activeTab]}
-                    onChange={(event) =>
-                      setListScope((prev) => ({
-                        ...prev,
-                        [activeTab]: event.target.value as ListScope,
-                      }))
-                    }
-                  >
-                    {getScopeOptions(activeTab).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {(activeTab === 'state' || activeTab === 'city') && visitedCountryScopeOptions.length > 0 && (
-                <div className="visited-country-filter">
-                  <div className="visited-country-filter__header">
-                    <span>Visited countries</span>
-                    {selectedVisitedCountries[activeTab].length > 0 && (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() =>
-                          setSelectedVisitedCountries((prev) => ({
-                            ...prev,
-                            [activeTab]: [],
-                          }))
-                        }
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  <div className="visited-country-filter__list">
-                    {visitedCountryScopeOptions.map((country) => (
-                      <label key={country.code} className="visited-country-option">
-                        <input
-                          type="checkbox"
-                          checked={selectedVisitedCountries[activeTab].includes(country.code)}
-                          onChange={() => onToggleVisitedCountrySelection(activeTab, country.code)}
-                        />
-                        <span>{country.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
               )}
             </div>
 
@@ -313,7 +276,16 @@ export function Sidebar({
                       const { title, subtitle, badges } = getPlaceCardContent(place, activeTab);
                       return (
                         <span className="place-card__body">
-                          <span className={`place-name place-card__title${activeTab === 'airport' ? ' airport-name' : ''}`} onClick={() => focusOnPlace(place)}>
+                          <span
+                            className={`place-name place-card__title${activeTab === 'airport' ? ' airport-name' : ''}`}
+                            onClick={(event) => {
+                              // The title sits inside the checkbox label; block the
+                              // label's default activation so clicking a name only
+                              // focuses the map and never toggles the visit.
+                              event.preventDefault();
+                              focusOnPlace(place);
+                            }}
+                          >
                             {title}
                           </span>
                           {badges.length > 0 && (

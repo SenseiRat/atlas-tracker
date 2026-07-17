@@ -82,7 +82,8 @@ PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "26000
 
 DATA_SYNC_INTERVAL_SECONDS = max(int(os.environ.get("DATA_SYNC_INTERVAL_SECONDS", "3600")), 0)
 
-DATA_SYNC_SCHEMA_VERSION = 3
+# v4: ISO_A2_EH + territory fallbacks so FR/NO/TW/etc. cities map to countries.
+DATA_SYNC_SCHEMA_VERSION = 4
 
 SourceCollector = Callable[[Any, Dict[str, Any]], Tuple[List[tuple], Dict[str, Tuple[str, str]]]]
 

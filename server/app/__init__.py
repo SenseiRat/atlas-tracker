@@ -1,1 +1,1 @@
-"""World Visited Tracker application package."""
+"""AtlasTracker application package."""

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AuthSession, MeasurementSystem, ThemeMode } from '../types';
+import type { AuthSession, MapLabelLanguage, MeasurementSystem, ThemeMode } from '../types';
 
 /**
  * Theme and measurement-system preferences, persisted to localStorage and
@@ -13,6 +13,10 @@ export function useAppPreferences(authSession: AuthSession | null) {
   const [measurementSystem, setMeasurementSystem] = useState<MeasurementSystem>(() => {
     const stored = localStorage.getItem('tracker-measurement-system');
     return stored === 'metric' ? 'metric' : 'imperial';
+  });
+  const [mapLabelLanguage, setMapLabelLanguage] = useState<MapLabelLanguage>(() => {
+    const stored = localStorage.getItem('tracker-map-label-language');
+    return stored === 'english' ? 'english' : 'local';
   });
 
   useEffect(() => {
@@ -36,5 +40,9 @@ export function useAppPreferences(authSession: AuthSession | null) {
     localStorage.setItem('tracker-measurement-system', measurementSystem);
   }, [measurementSystem]);
 
-  return { themeMode, setThemeMode, measurementSystem, setMeasurementSystem };
+  useEffect(() => {
+    localStorage.setItem('tracker-map-label-language', mapLabelLanguage);
+  }, [mapLabelLanguage]);
+
+  return { themeMode, setThemeMode, measurementSystem, setMeasurementSystem, mapLabelLanguage, setMapLabelLanguage };
 }
