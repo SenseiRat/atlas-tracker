@@ -49,6 +49,9 @@ jobs:
         run: |
           pip install --no-cache-dir ruff==0.8.6
           pip install --no-cache-dir -r server/requirements-dev.txt
+          apt-get update && apt-get install -y curl
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
 
       - name: Ruff (lint / code quality)
         continue-on-error: true  # report-only
