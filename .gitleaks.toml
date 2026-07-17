@@ -1,0 +1,18 @@
+# Gitleaks config: start from the maintained default rule set, then add a
+# small allowlist for this repo's known-safe placeholders. Extending (rather
+# than replacing) the base config means new default rules are picked up for free.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Repo-specific false positives (placeholders, example config, test fixtures)"
+paths = [
+    '''\.env\.example$''',
+    '''server/tests/.*''',
+    '''frontend/package-lock\.json$''',
+]
+# Obvious non-secret placeholder values used in example/docs config.
+regexes = [
+    '''change-me''',
+    '''your-.*-here''',
+]

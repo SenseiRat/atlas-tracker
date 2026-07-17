@@ -1,0 +1,39 @@
+# Ruff config for the FastAPI backend.
+# Ruff is a single fast binary that stands in for flake8 + isort + pyupgrade +
+# flake8-bugbear, which keeps the CI lint step near-instant on a homelab runner.
+# Security-focused analysis is intentionally left to Semgrep (see CI), so the
+# rule set here stays focused on correctness and style.
+target-version = "py311"
+line-length = 100
+
+# Only the Python backend lives under server/.
+include = ["server/**/*.py", "scripts/**/*.py"]
+extend-exclude = [".venv", "server/tests/fixtures", "**/__pycache__"]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports/vars, undefined names)
+    "B",   # flake8-bugbear likely-bug patterns
+    "UP",  # pyupgrade modern-syntax suggestions
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+# Import ordering (I) is intentionally omitted: this project never enforced it,
+# so surfacing it would bury real findings under cosmetic noise. Run
+# `ruff check --select I --fix` once if you want to adopt it. E501 (line length)
+# is likewise cosmetic and left to the formatter.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Tests deliberately use fixtures/patterns that trip a few rules.
+"server/tests/**" = ["B", "SIM", "F811", "F401"]
+# The backend is assembled from a package of modules that re-export each
+# other's symbols via `from server.app.X import *`. That pattern inherently
+# trips the star-import rules, so silence them here rather than fight the
+# architecture; real correctness rules (B, UP, SIM, ...) still apply.
+"server/app/**" = ["F401", "F403", "F405"]
+"server/main.py" = ["F401", "F403", "F405"]
+
+[lint.isort]
+known-first-party = ["server"]
