@@ -41,7 +41,11 @@ jobs:
   # ---------------------------------------------------------------------------
   backend:
     runs-on: ubuntu-latest
-    container: python:3.11  # full image ships git, which actions/checkout needs
+    # act_runner executes JS actions (checkout, upload-artifact) with the *job
+    # container's* node binary, so the image must ship node in addition to
+    # python — plain python:3.11 fails with exit 127 (nektos/act#107). This
+    # image is python 3.11 + node 20 and, like the full python image, ships git.
+    container: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: https://github.com/actions/checkout@v4
 
@@ -49,9 +53,6 @@ jobs:
         run: |
           pip install --no-cache-dir ruff==0.8.6
           pip install --no-cache-dir -r server/requirements-dev.txt
-          apt-get update && apt-get install -y curl
-          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-          apt-get install -y nodejs
 
       - name: Ruff (lint / code quality)
         continue-on-error: true  # report-only
@@ -142,9 +143,15 @@ jobs:
   # ---------------------------------------------------------------------------
   sast:
     runs-on: ubuntu-latest
-    container: semgrep/semgrep:latest  # ships semgrep + python + git
+    # semgrep/semgrep:latest has no node, so JS actions can't run in it (see the
+    # note on the backend job). Use the python+node image and pip-install
+    # semgrep instead.
+    container: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: https://github.com/actions/checkout@v4
+
+      - name: Install Semgrep
+        run: pip install --no-cache-dir semgrep
 
       - name: Semgrep scan
         run: |
