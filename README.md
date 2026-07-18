@@ -59,8 +59,8 @@ You can configure the container with these environment variables:
 - `OIDC_SCOPES`: authorization scopes (default `openid profile email`)
 - `OIDC_REDIRECT_PATH`: callback path or full callback URL (default `/api/auth/callback`)
 - `OIDC_SESSION_SECRET`: required HMAC secret for signed auth cookies when OIDC is enabled
-- `OIDC_SESSION_COOKIE`: signed session cookie name (default `world_tracker_session`)
-- `OIDC_LOGIN_COOKIE`: temporary login state cookie name (default `world_tracker_login`)
+- `OIDC_SESSION_COOKIE`: signed session cookie name (default `atlas_tracker_session`)
+- `OIDC_LOGIN_COOKIE`: temporary login state cookie name (default `atlas_tracker_login`)
 - `OIDC_SESSION_TTL_SECONDS`: session lifetime (default `604800`)
 - `OIDC_LOGIN_TTL_SECONDS`: login state lifetime (default `600`)
 - `OIDC_COOKIE_SECURE`: mark auth cookies `Secure` (`1`/`0`, default `0`)

@@ -3,7 +3,7 @@
 node_modules
 frontend/node_modules
 frontend/dist
-world-tracker-data
+atlas-tracker-data
 data_sources/raw
 *.log
 data_bck

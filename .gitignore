@@ -4,7 +4,7 @@ frontend/node_modules
 frontend/dist
 __pycache__
 *.pyc
-world-tracker-data
+atlas-tracker-data
 data_bck/
 .tmp-check/
 *Zone.Identifier

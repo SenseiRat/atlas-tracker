@@ -76,12 +76,12 @@ OIDC_REDIRECT_PATH = (
 OIDC_SESSION_SECRET = os.environ.get("OIDC_SESSION_SECRET", "").strip()
 
 OIDC_SESSION_COOKIE = (
-    os.environ.get("OIDC_SESSION_COOKIE", "world_tracker_session").strip()
-    or "world_tracker_session"
+    os.environ.get("OIDC_SESSION_COOKIE", "atlas_tracker_session").strip()
+    or "atlas_tracker_session"
 )
 
 OIDC_LOGIN_COOKIE = (
-    os.environ.get("OIDC_LOGIN_COOKIE", "world_tracker_login").strip() or "world_tracker_login"
+    os.environ.get("OIDC_LOGIN_COOKIE", "atlas_tracker_login").strip() or "atlas_tracker_login"
 )
 
 OIDC_SESSION_TTL_SECONDS = int(os.environ.get("OIDC_SESSION_TTL_SECONDS", str(7 * 24 * 60 * 60)))
@@ -95,8 +95,8 @@ OIDC_COOKIE_SECURE = os.environ.get("OIDC_COOKIE_SECURE", "0").strip().lower() i
 }
 
 LOCAL_USER_COOKIE = (
-    os.environ.get("LOCAL_USER_COOKIE", "world_tracker_local_user").strip()
-    or "world_tracker_local_user"
+    os.environ.get("LOCAL_USER_COOKIE", "atlas_tracker_local_user").strip()
+    or "atlas_tracker_local_user"
 )
 
 PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "260000"))
@@ -121,7 +121,7 @@ SOURCE_DATASET_DEFINITIONS = {
     },
 }
 
-logger = logging.getLogger("world_tracker")
+logger = logging.getLogger("atlas_tracker")
 
 VALID_PLACE_TYPES = {"country", "state", "city", "airport", "site"}
 
