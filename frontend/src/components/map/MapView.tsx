@@ -180,8 +180,8 @@ export const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           source: 'trip-routes',
           paint: {
             'line-color': ['coalesce', ['get', 'route_color'], theme.route],
-            'line-width': 2.5,
-            'line-opacity': 0.75,
+            'line-width': 3.25,
+            'line-opacity': 0.95,
           },
         });
 

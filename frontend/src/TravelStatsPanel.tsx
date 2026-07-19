@@ -1,22 +1,43 @@
-import { type HemisphereQuadrant, type TravelStatsModel } from './travelStats';
+import { hemisphereQuadrantLabels, type HemisphereQuadrant, type TravelStatsModel } from './travelStats';
 
 type TravelStatsPanelProps = {
   model: TravelStatsModel;
 };
 
-/** Compass-style 2x2 grid showing which hemisphere quadrants were visited. */
-function HemisphereGrid({ quadrants }: { quadrants: HemisphereQuadrant[] }) {
+// Circle centered at (56, 56) with radius 40, split by the equator and prime
+// meridian into one wedge per hemisphere quadrant.
+const hemisphereWedgePaths: Record<HemisphereQuadrant, string> = {
+  NE: 'M56 56 L56 16 A40 40 0 0 1 96 56 Z',
+  SE: 'M56 56 L96 56 A40 40 0 0 1 56 96 Z',
+  SW: 'M56 56 L56 96 A40 40 0 0 1 16 56 Z',
+  NW: 'M56 56 L16 56 A40 40 0 0 1 56 16 Z',
+};
+
+/** Globe diagram: the equator and prime meridian divide the world into four
+ * quadrants; visited ones are filled, so SE-only (Australia) reads differently
+ * from SW (South America) or NW/NE (North America). */
+function HemisphereGlobe({ quadrants }: { quadrants: HemisphereQuadrant[] }) {
   const covered = new Set(quadrants);
+  const description = quadrants.map((quadrant) => hemisphereQuadrantLabels[quadrant]).join(', ') || 'none';
   return (
-    <span className="hemisphere-grid" role="img" aria-label={`Hemispheres visited: ${quadrants.join(', ') || 'none'}`}>
-      {(['NW', 'NE', 'SW', 'SE'] as const).map((quadrant) => (
-        <span
-          key={quadrant}
-          className={`hemisphere-grid__cell${covered.has(quadrant) ? ' hemisphere-grid__cell--covered' : ''}`}
-        >
-          {quadrant}
-        </span>
-      ))}
+    <span className="hemisphere-globe" role="img" aria-label={`Hemisphere quadrants visited: ${description}`}>
+      <svg viewBox="0 0 112 112" focusable="false" aria-hidden="true">
+        {(['NE', 'SE', 'SW', 'NW'] as const).map((quadrant) => (
+          <path
+            key={quadrant}
+            d={hemisphereWedgePaths[quadrant]}
+            className={`hemisphere-globe__quadrant${covered.has(quadrant) ? ' hemisphere-globe__quadrant--covered' : ''}`}
+          />
+        ))}
+        <circle className="hemisphere-globe__outline" cx="56" cy="56" r="40" />
+        <line className="hemisphere-globe__axis" x1="16" y1="56" x2="96" y2="56" />
+        <line className="hemisphere-globe__axis" x1="56" y1="16" x2="56" y2="96" />
+        <text className="hemisphere-globe__label" x="56" y="11">N</text>
+        <text className="hemisphere-globe__label" x="56" y="110">S</text>
+        <text className="hemisphere-globe__label" x="7" y="59">W</text>
+        <text className="hemisphere-globe__label" x="105" y="59">E</text>
+      </svg>
+      <span className="hemisphere-globe__caption">{covered.size} of 4 quadrants</span>
     </span>
   );
 }
@@ -90,7 +111,7 @@ export function TravelStatsPanel({ model }: TravelStatsPanelProps) {
                       </div>
                       <div className="travel-stat-row__value">
                         {stat.quadrants && stat.quadrants.length > 0 ? (
-                          <HemisphereGrid quadrants={stat.quadrants} />
+                          <HemisphereGlobe quadrants={stat.quadrants} />
                         ) : (
                           <strong>{stat.displayValue}</strong>
                         )}

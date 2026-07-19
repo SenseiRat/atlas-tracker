@@ -35,12 +35,13 @@ services:
       UVICORN_WORKERS: "${UVICORN_WORKERS:-1}"
       FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
     volumes:
-      - atlas-tracker-data:/data
+      #- atlas-tracker-data:/data
+      - ./atlas-tracker-data:/data
 
-volumes:
-  atlas-tracker-data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=192.168.10.20,rw,nfsvers=4
-      device: ":/tank/appdata/atlastracker-data"
+#volumes:
+#  atlas-tracker-data:
+#    driver: local
+#    driver_opts:
+#      type: nfs
+#      o: addr=192.168.10.20,rw,nfsvers=4
+#      device: ":/tank/appdata/atlastracker-data"

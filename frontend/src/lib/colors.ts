@@ -176,10 +176,12 @@ export function createProfileVisuals(baseColor: string, themeMode: ThemeMode) {
     themeMode === 'dark'
       ? adjustHexColor(normalized, { hueShift: 28, saturationDelta: -0.02, lightnessDelta: 0.08 })
       : adjustHexColor(normalized, { hueShift: 30, saturationDelta: 0.01, lightnessDelta: -0.1 });
+  // Routes draw on top of country fills tinted with the same base color, so
+  // push their lightness well away from the base to keep them visible.
   const route =
     themeMode === 'dark'
-      ? adjustHexColor(normalized, { hueShift: -10, saturationDelta: -0.06, lightnessDelta: 0.1 })
-      : adjustHexColor(normalized, { hueShift: -8, saturationDelta: -0.02, lightnessDelta: -0.14 });
+      ? mixHexColors(adjustHexColor(normalized, { hueShift: -10, saturationDelta: 0.12, lightnessDelta: 0.24 }), '#ffffff', 0.15)
+      : adjustHexColor(normalized, { hueShift: -8, saturationDelta: 0.1, lightnessDelta: -0.28 });
 
   return {
     base: normalized,

@@ -189,6 +189,13 @@ type ExtremePlace = {
 
 export type HemisphereQuadrant = 'NE' | 'NW' | 'SE' | 'SW';
 
+export const hemisphereQuadrantLabels: Record<HemisphereQuadrant, string> = {
+  NE: 'North-Eastern',
+  NW: 'North-Western',
+  SE: 'South-Eastern',
+  SW: 'South-Western',
+};
+
 type TravelStatResult = {
   displayValue: string;
   detail?: string;
@@ -772,9 +779,9 @@ function buildContext(
   const hemisphereQuadrants = (['NE', 'NW', 'SE', 'SW'] as const).filter((quadrant) => hemisphereQuadrantSet.has(quadrant));
   const hemisphereCoverage =
     hemisphereQuadrants.length === 4
-      ? 'All four hemispheres'
+      ? 'All four hemisphere quadrants'
       : hemisphereQuadrants.length > 0
-        ? `${hemisphereQuadrants.map((quadrant) => `${quadrant} hemisphere`).join(', ')}`
+        ? hemisphereQuadrants.map((quadrant) => hemisphereQuadrantLabels[quadrant]).join(', ')
         : 'Unavailable';
 
   const repeatDestinationGroups = Array.from(destinationCounts.values()).filter((count) => count > 1).length;

@@ -635,6 +635,9 @@ body {
   margin: 0;
   overflow-y: auto;
   display: grid;
+  /* Keep cards at their natural height instead of stretching rows to fill
+     leftover space when a filter leaves only a few results. */
+  align-content: start;
   gap: 10px;
   flex: 1 1 auto;
   min-height: 0;
@@ -1077,33 +1080,51 @@ body {
   font-size: 1.15rem;
 }
 
-.hemisphere-grid {
+.hemisphere-globe {
   display: inline-grid;
-  grid-template-columns: repeat(2, 34px);
-  grid-auto-rows: 26px;
-  gap: 3px;
-  border-radius: 8px;
+  justify-items: center;
+  gap: 6px;
 }
 
-.hemisphere-grid__cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  color: var(--muted);
-  background: var(--card);
+.hemisphere-globe svg {
+  display: block;
+  width: 92px;
+  height: 92px;
+}
+
+.hemisphere-globe__quadrant {
+  fill: var(--card);
   opacity: 0.55;
 }
 
-.hemisphere-grid__cell--covered {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-text);
+.hemisphere-globe__quadrant--covered {
+  fill: var(--accent);
   opacity: 1;
+}
+
+.hemisphere-globe__outline {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.hemisphere-globe__axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  opacity: 0.8;
+}
+
+.hemisphere-globe__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-anchor: middle;
+  fill: var(--muted);
+}
+
+.hemisphere-globe__caption {
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
 .travel-stats-empty {
