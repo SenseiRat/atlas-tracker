@@ -760,6 +760,7 @@ async def admin_migrate_settings(payload: dict[str, Any], request: Request) -> d
     with get_db() as source_conn:
         _require_admin(request, source_conn)
         updates = _resolve_secret_placeholders(updates, _get_app_settings(source_conn))
+        _preflight_target_connection(target_backend, updates)
         _set_app_settings(source_conn, updates)
         current_settings = _get_app_settings(source_conn)
         current_settings.update(updates)

@@ -119,6 +119,22 @@ def _clear_target_tables(conn: DBConnection) -> None:
         conn.execute(f"DELETE FROM {table}")
 
 
+# Columns declared BOOLEAN in the Postgres schema but stored as INTEGER (0/1) in
+# SQLite. Postgres will not implicitly cast smallint -> boolean, so these values
+# must be coerced to Python bool before insert. bool is a subclass of int, so this
+# stays correct for a SQLite target as well.
+BOOLEAN_COLUMNS: dict[str, set[str]] = {
+    "profiles": {"is_public"},
+    "place_source_state": {"is_active"},
+}
+
+
+def _coerce_value(table: str, column: str, value: Any) -> Any:
+    if value is not None and column in BOOLEAN_COLUMNS.get(table, frozenset()):
+        return bool(value)
+    return value
+
+
 def _copy_rows(
     conn: DBConnection, table: str, columns: list[str], rows: list[dict[str, Any]]
 ) -> None:
@@ -126,7 +142,13 @@ def _copy_rows(
         return
     placeholders = ",".join("?" for _ in columns)
     query = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
-    conn.executemany(query, [tuple(row.get(column) for column in columns) for row in rows])
+    conn.executemany(
+        query,
+        [
+            tuple(_coerce_value(table, column, row.get(column)) for column in columns)
+            for row in rows
+        ],
+    )
 
 
 def _reset_postgres_sequence(conn: DBConnection, table: str, column: str) -> None:
@@ -139,6 +161,29 @@ def _reset_postgres_sequence(conn: DBConnection, table: str, column: str) -> Non
         )
         """
     )
+
+
+def _preflight_target_connection(target_backend: str, target_settings: dict[str, Any]) -> None:
+    """Verify the migration target is reachable before copying any data.
+
+    Opening the target connection first turns connection/auth failures into a
+    clean 400 up front, instead of a 500 traceback surfacing mid-migration.
+    The HTTPException raised by _connect_db for missing host/dbname is passed
+    through unchanged.
+    """
+    try:
+        with get_db_for_backend(target_backend, target_settings) as target_conn:
+            target_conn.execute("SELECT 1").fetchone()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface any driver error as a 400
+        logging.getLogger(__name__).warning(
+            "Migration pre-flight to %s failed: %s", target_backend, exc
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not connect to the target {target_backend} database: {exc}",
+        ) from exc
 
 
 def _migrate_database_snapshot(
@@ -233,5 +278,6 @@ __all__ = [
     "_clear_target_tables",
     "_copy_rows",
     "_reset_postgres_sequence",
+    "_preflight_target_connection",
     "_migrate_database_snapshot",
 ]
