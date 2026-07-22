@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from collections.abc import Callable, Iterator
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -37,6 +38,10 @@ from server.app.routes import router
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AtlasTracker")
+    # Place lists are large, highly repetitive JSON; gzip shrinks the city
+    # payload from ~6 MB/page to well under 1 MB. Only kicks in above 1 KB so
+    # small responses aren't paid the compression cost.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.include_router(router)
 
     @app.on_event("startup")

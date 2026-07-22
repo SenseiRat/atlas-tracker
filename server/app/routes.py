@@ -848,6 +848,7 @@ async def admin_migrate_settings(payload: dict[str, Any], request: Request) -> d
 
 @router.get("/api/places")
 async def get_places(
+    request: Request,
     type: str = Query(...),
     query: str | None = None,
     country_code: str | None = None,
@@ -855,7 +856,7 @@ async def get_places(
     include_total: bool = True,
     limit: int = Query(1000, ge=1, le=20000),
     offset: int = Query(0, ge=0),
-) -> dict[str, Any]:
+) -> Response:
     if type not in VALID_PLACE_TYPES:
         raise HTTPException(status_code=400, detail="Invalid place type")
     params: list[Any] = [type, True]
@@ -933,7 +934,7 @@ async def get_places(
                 f"SELECT COUNT(*) as count FROM places {_active_place_join_sql()} {where}",
                 params,
             ).fetchone()["count"]
-    return {
+    payload = {
         "items": items,
         "total": total,
         "limit": limit,
@@ -941,6 +942,18 @@ async def get_places(
         "has_more": has_more,
         "next_offset": next_offset,
     }
+
+    # Place lists are effectively static reference data that only changes when
+    # the background data sync runs. Emit a content-based ETag so revisits can
+    # revalidate cheaply: an unchanged list comes back as an empty 304 instead
+    # of re-downloading megabytes. max-age keeps a short window where the
+    # browser serves straight from cache without any round trip.
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    etag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+    cache_headers = {"Cache-Control": "private, max-age=300", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+    return Response(content=body, media_type="application/json", headers=cache_headers)
 
 
 @router.get("/api/places/geojson")

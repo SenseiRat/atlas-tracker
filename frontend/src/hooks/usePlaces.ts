@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { tabs } from '../constants';
+import { readCachedPlaces, writeCachedPlaces } from '../lib/placesCache';
 import { getSiteCountryKeys } from '../lib/sites';
 import type { Place, PlacesResponse, PlaceType } from '../types';
 
@@ -9,39 +9,68 @@ type UsePlacesOptions = {
   setUiError: (message: string | null) => void;
 };
 
+const emptyPlaces = (): Record<PlaceType, Place[]> => ({
+  country: [],
+  state: [],
+  city: [],
+  airport: [],
+  site: [],
+});
+
+// Loaded smallest-first so the fast lists (countries, states) paint almost
+// immediately instead of waiting behind the ~33k-row city download.
+const loadOrder: PlaceType[] = ['country', 'state', 'airport', 'site', 'city'];
+
 /**
  * Loads every place list once and exposes the derived lookups (sorted lists,
  * search text, airport code/label maps, country/state name maps).
+ *
+ * Loading is progressive and cache-first: each type is painted the moment its
+ * data is available — first from the IndexedDB cache of the previous session,
+ * then overwritten by a fresh network fetch (stale-while-revalidate). This
+ * replaces the old all-or-nothing load that left every list blank until the
+ * slowest one (cities) finished.
  */
 export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
-  const [places, setPlaces] = useState<Record<PlaceType, Place[]>>({
-    country: [],
-    state: [],
-    city: [],
-    airport: [],
-    site: [],
+  const [places, setPlaces] = useState<Record<PlaceType, Place[]>>(emptyPlaces);
+  // A type is "loading" until it has data from either the cache or the network
+  // (or a network fetch completes empty). Drives per-list loading skeletons.
+  const [placesLoading, setPlacesLoading] = useState<Record<PlaceType, boolean>>({
+    country: true,
+    state: true,
+    city: true,
+    airport: true,
+    site: true,
   });
 
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
-    const loadAllPlaces = async (tab: (typeof tabs)[number]): Promise<Place[]> => {
-      const airportParam = tab.type === 'airport' ? '&major_only=true' : '';
+    let active = true;
+
+    const setType = (type: PlaceType, items: Place[]) => {
+      if (!active) return;
+      setPlaces((prev) => ({ ...prev, [type]: items }));
+      setPlacesLoading((prev) => (prev[type] ? { ...prev, [type]: false } : prev));
+    };
+
+    const loadAllPlaces = async (type: PlaceType): Promise<Place[]> => {
+      const airportParam = type === 'airport' ? '&major_only=true' : '';
       const pageSizeByType: Record<PlaceType, number> = {
         country: 500,
         state: 10000,
-        city: 10000,
+        city: 20000,
         airport: 5000,
         site: 3000,
       };
-      const pageSize = pageSizeByType[tab.type];
+      const pageSize = pageSizeByType[type];
       let offset = 0;
       let hasMore = true;
       const allItems: Place[] = [];
 
       while (hasMore) {
         const response = await api<PlacesResponse>(
-          `/api/places?type=${tab.type}&limit=${pageSize}&offset=${offset}&include_total=false${airportParam}`,
+          `/api/places?type=${type}&limit=${pageSize}&offset=${offset}&include_total=false${airportParam}`,
           { signal: controller.signal },
         );
         allItems.push(...response.items);
@@ -53,35 +82,36 @@ export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
       return allItems;
     };
 
-    Promise.all(
-      tabs.map(async (tab) => {
-        const items = await loadAllPlaces(tab);
-        return [tab.type, items] as const;
-      }),
-    )
-      .then((entries) => {
-        if (controller.signal.aborted) return;
-        setPlaces(
-          entries.reduce(
-            (acc, [type, items]) => {
-              acc[type] = items;
-              return acc;
-            },
-            {
-              country: [],
-              state: [],
-              city: [],
-              airport: [],
-              site: [],
-            } as Record<PlaceType, Place[]>,
-          ),
-        );
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
-        setUiError('Unable to load place lists.');
+    // Paint from the persisted cache first (fast, may be slightly stale). Only
+    // fills a type the network hasn't already delivered for this session.
+    const hydrated = new Set<PlaceType>();
+    loadOrder.forEach((type) => {
+      readCachedPlaces(type).then((cached) => {
+        if (!active || !cached || !cached.length) return;
+        if (hydrated.has(type)) return;
+        hydrated.add(type);
+        setType(type, cached);
       });
+    });
+
+    // Fetch fresh in parallel; each type replaces its cache-hydrated list as
+    // soon as it arrives and is written back to the cache for next time.
+    loadOrder.forEach((type) => {
+      loadAllPlaces(type)
+        .then((items) => {
+          if (!active) return;
+          hydrated.add(type);
+          setType(type, items);
+          void writeCachedPlaces(type, items);
+        })
+        .catch((error) => {
+          if (!active || (error instanceof DOMException && error.name === 'AbortError')) return;
+          setUiError('Unable to load place lists.');
+        });
+    });
+
     return () => {
+      active = false;
       controller.abort();
     };
   }, [enabled]);
@@ -251,6 +281,7 @@ export function usePlaces({ enabled, setUiError }: UsePlacesOptions) {
 
   return {
     places,
+    placesLoading,
     sortedPlaces,
     placeSearchTextByType,
     airportOptions,

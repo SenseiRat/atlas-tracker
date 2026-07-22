@@ -68,6 +68,7 @@ function App() {
     useAppPreferences(authSession);
   const {
     places,
+    placesLoading,
     sortedPlaces,
     placeSearchTextByType,
     airportLabelById,
@@ -209,6 +210,7 @@ function App() {
       <div className="content">
         <Sidebar
           filters={filters}
+          placesLoading={placesLoading}
           visitedIds={visitedIds}
           profileId={profileId}
           canEditSelectedProfile={canEditSelectedProfile}

@@ -7,6 +7,7 @@ import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
 
 type SidebarProps = {
   filters: ReturnType<typeof usePlaceFilters>;
+  placesLoading: Record<PlaceType, boolean>;
   visitedIds: Set<string>;
   profileId: ActiveProfile;
   canEditSelectedProfile: boolean;
@@ -22,6 +23,7 @@ type SidebarProps = {
 /** Sidebar: place-type tabs, search/scope/site filters, and the place list. */
 export function Sidebar({
   filters,
+  placesLoading,
   visitedIds,
   profileId,
   canEditSelectedProfile,
@@ -256,6 +258,12 @@ export function Sidebar({
             </div>
 
             <ul className="list">
+              {placesLoading[activeTab] && visiblePlaces.length === 0 &&
+                Array.from({ length: 8 }).map((_, index) => (
+                  <li key={`skeleton-${index}`} className="place-card place-card--skeleton" aria-hidden="true">
+                    <span className="place-card__skeleton-line" />
+                  </li>
+                ))}
               {visiblePlaces.map((place) => (
                 <li key={place.id} className={`place-card place-card--${activeTab}${visitedIds.has(place.id) ? ' place-card--visited' : ''}`}>
                   <label
